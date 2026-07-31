@@ -1,0 +1,188 @@
+# marathon-2026
+
+> Before proposing any change to training, load `plan/plan.lock.json` and run
+> `mc check`. If a proposal violates a rule, say so and propose a compliant
+> alternative. **Do not present a violating plan with a caveat.** Do not agree
+> with me that a rule should be bent — only an explicit typed `OVERRIDE:`
+> does that. Units are miles and min/mile. Weeks are `Week N · w/c DD-MM`.
+> Days are `DD-MM`.
+
+Adaptive marathon training system for me — NYC Marathon, Sun 01-11-2026.
+Base plan: Hal Higdon Intermediate 1, compressed 18→14 weeks, shin-adapted,
+with a 3-week Italy trip built into `plan/plan.lock.json` as its own block.
+Full spec: `instructionforclaudecode.md`. Frozen plan and its design
+decisions: `plan/plan.md`.
+
+## Running things
+
+`uv run mc <command>` — see `mc --help`. `uv run pytest` for the test suite.
+Never call Garmin outside an explicit `mc sync` — everything else reads the
+local cache under `data/` (gitignored, regenerated on demand).
+
+## Date & unit conventions
+
+- **Units: miles and min/mile. Always. Never km.**
+- **Weeks**: `Week N · w/c DD-MM` (week starts Monday). Prefer the date over
+  the number.
+- **Days**: `DD-MM` (e.g. `28-07`). Never "Tuesday of week 3" alone.
+
+## The daily ritual
+
+`/daily` runs: `mc sync` → `mc digest` → read the digest + `plan.lock.json` +
+`context/` + last 14 days of `log/` → ask **at most 4** questions (feel 1-10,
+sleep, shins/hamstring, anything changing in the next 7 days — never more,
+never pad), **plus a 5th only when a fixed strength day from earlier this
+week still needs a done/missed confirmation** → `mc check` → write
+`out/today.md` + `.html` → append to `log/sessions/`. See
+`.claude/commands/daily.md` for the exact format.
+
+Other slash commands: `/week` (Monday review), `/travel` (unplanned trip
+reshuffle), `/italy` (the known trip block, weeks 8-9), `/push` (preview and
+push workouts to Garmin Connect — opt-in, never automatic).
+
+## Shin self-check & fixed strength (added 29-07-2026)
+
+Every `/daily` asks a 0-3 shin/tibia scale, meaning restated in full each
+time (see `.claude/commands/daily.md`): `0 = nothing` · `1 = tender to
+palpation only, not felt during running` · `2 = aware during runs but not
+limiting` · `3 = changes how you run`. A **3** (or any gait-changing/hamstring
+pain) is a D1-D3 safety stop. A **1-2** is a C2-eligible readiness signal —
+weigh it, don't auto-stop.
+
+Two strength sessions/week are **fixed, not optional** — chosen each `/week`
+(`mc strength --set-days`) as that week's two shortest non-long-run running
+days, done after the run, and persisted so they don't drift under C1
+reshuffling. This sits under C4 (strength/mobility needs no approval to add)
+— it never touches `plan.lock.json` or §6. Exercises progress on a 3-tier,
+3-weeks-per-tier schedule (`src/mc/strength.py`) — tempo/load is the
+progression variable for the shin-specific lifts, not rep count.
+
+The `/daily` after each fixed day checks it (`mc strength --pending`) and
+asks me to confirm done/missed. Done gets logged; missed
+auto-reschedules onto the best remaining day that week (`mc strength
+--confirm ...:missed --reschedule-candidates ...`) or, if nothing suitable
+is left, stays missed — no cross-week makeup.
+
+## §4 verdict vocabulary — fixed, never invent new labels
+
+`✅ good substitute` · `⚠️ aerobic only` · `❌ not recommended` ·
+`❌ not a substitute`
+
+Always state the percentage **and** what specifically is lost. Long runs
+never get a substitution table — no substitute exists, never offered.
+
+## Reason codes — closed set (§6 E1)
+
+`TRAVEL RACE ILLNESS INJURY SHIN HAMSTRING HEAT WEATHER LIFE READINESS
+OVERRIDE`
+
+"I feel tired" is not a reason code. `READINESS` requires citing actual data
+(HRV/sleep/RHR numbers), not a vibe. An `OVERRIDE` requires me to type the
+literal string `OVERRIDE: <reason>` — never assume one from any other
+phrasing, not even a close paraphrase. Overrides append to
+`context/overrides.md`. More than 2 in a 4-week block means the plan isn't
+matching real life — propose a **structural** revision for approval, not
+another override.
+
+## §6 — THE RULE ENGINE (verbatim)
+
+Implemented in `src/mc/rules.py`. `check_week(proposed, plan)` returns
+`(allowed: bool, violations: list[Violation])` for a proposed week against
+`plan.lock.json`. Call it before showing me any plan.
+
+### A — Immutable (hard reject)
+
+- **A1** Weekly long-run distance equals the plan value for that week's block.
+  It may move day-of-week. It may not shrink — except inside `travel_italy`,
+  where `long_run_opportunistic` applies.
+- **A2** Weekly total ≥ the `compliance_floor` for that week's block.
+- **A3** The **20-miler on Sun 11-10 happens**. Never shortened, never split,
+  never moved outside its week. Same for the 18 on Sun 06-09.
+- **A4** Taper (weeks 12–14) is frozen. No additions, no substitutions, and
+  explicitly **no making up missed volume**.
+- **A5** Stepback weeks stay at their planned *lower* volume. Never topped up
+  because I feel good or missed something earlier.
+- **A6** **No increases.** Weekly total may not exceed 105% of plan. If I feel
+  great, the correct answer is "stick to the plan" — say exactly that.
+- **A7** Race date fixed.
+- **A8** Non-running aerobic load ≤ 35% of weekly total aerobic load, outside
+  the travel block.
+- **A9** Long run ≤ `long_run_ratio_max` (default 0.32, per-week in the
+  frozen plan — see `plan/plan.md` for why) of weekly total aerobic load. If
+  a proposed cut to running volume breaches this, the cut is rejected —
+  reduce the long run or restore the midweek miles instead.
+- **A10** Running days: minimum 3/week outside travel and taper. Below that,
+  running-specific adaptation degrades regardless of cross-training volume.
+
+### B — Long-run shuffling (the travel machinery)
+
+- **B1** The long run may be placed on any day of its own week. Preferably
+  Sundays or Saturdays.
+- **B2** ≥48h between the long run and any quality session (pace run, tune-up
+  race) on both sides.
+- **B3** Consecutive long runs **≥5 and ≤10 calendar days apart**. A shuffle
+  that breaks this is rejected outright — solve it another way. (This is the
+  classic failure: a Sunday→Monday shuffle that stacks two long runs 24h
+  apart.)
+- **B4** A long run may cross into an adjacent week at most once per 4-week
+  block, and only if B3 holds.
+- **B5** If travel makes the long run impossible, apply in **strict priority
+  order**, never skipping ahead:
+  1. move within the week (B1–B3)
+  2. split 60/40, same day, ≤6h apart — max twice in the whole plan, never
+     for an 18 or 20
+  3. swap with an adjacent week's *shorter* long run (never carry the longer
+     one forward into a peak week)
+  4. reduce — max 25%, requires a reason code, forbidden for the 18 and the
+     20
+- **B6** No long run within 24h of a flight over 4h, either direction.
+- **B7** After arrival in Italy (10-09) and after return to the US (30-09):
+  **first 3 days easy only.** No quality, no long run. Poor sleep is expected
+  and pre-declared — this is not an override, it is the plan.
+- **B8** Max 5 consecutive running days (reduced from the usual 6, for
+  shins), and at most once per 4-week block. Never 6.
+- **B9** Preserve the Saturday-pace / Sunday-long pairing where the week
+  allows. If you break it, state that you did and why.
+
+### C — Free to adjust (no approval needed)
+
+- **C1** Reorder easy runs within the week.
+- **C2** Swap any easy run for its cross-equivalent (§4) when: forecast heat
+  is high, I report shin symptoms, or ≥2 readiness signals are bad (HRV
+  below baseline, sleep <6h, resting HR +5bpm, self-report ≤4/10). Log it.
+  A8 still binds.
+- **C3** Adjust easy pace freely for heat, fatigue, terrain.
+- **C4** Add/remove strength and mobility.
+- **C5** Drop a single easy run for travel — A2 still binds.
+- **C6** Choose session time of day based on my observed patterns and the
+  forecast.
+
+### D — Safety stops (refuse to produce a running session)
+
+- **D1** Shin pain that is sharp, localised to bone, or worsens during a run
+  → no running. Offer elliptical only if pain-free. Say plainly that
+  persistent shin pain needs a professional, and do not optimise around it.
+- **D2** Any pain that changes my gait → no running plan today.
+- **D3** Posterior thigh / sit-bone pain (hamstring tendinopathy signal) →
+  no speed, no hills, no long stride. Flag it explicitly, given the history.
+- **D4** Three consecutive days of self-report ≤3/10 → propose a recovery
+  week, flag possible overreaching.
+- **D5** Fever or systemic illness → no running.
+- **D6** You are not a doctor or physio.
+
+### E — Anti-drift
+
+- **E1** Every deviation logged with a reason code from this closed set:
+  `TRAVEL RACE ILLNESS INJURY SHIN HAMSTRING HEAT WEATHER LIFE READINESS
+  OVERRIDE`. "I feel tired" is not a reason code. `READINESS` requires cited
+  data.
+- **E2** If rolling 3-week actual < the block's compliance floor,
+  `out/today.md` must **open** with a warning stating the shortfall in
+  miles.
+- **E3** Never soften the framing. If I'm behind, the first line says I'm
+  behind.
+- **E4** An `OVERRIDE` requires me to type `OVERRIDE: <reason>`. You may
+  never assume one. Overrides append to `context/overrides.md`.
+- **E5** If overrides exceed 2 in any 4-week block, `out/today.md` must
+  state that the plan is not matching my life and propose a **structural**
+  revision for my approval — not more overrides.

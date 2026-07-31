@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marathon 2026 — dashboard</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+         max-width: 820px; margin: 0 auto; padding: 1.25rem; line-height: 1.5; }
+  h1 { font-size: 1.3rem; margin-bottom: 0.3rem; }
+  h2 { font-size: 1.05rem; margin-top: 1.75rem; border-bottom: 1px solid currentColor; padding-bottom: 0.2rem; }
+  h3 { font-size: 0.95rem; margin-top: 1.25rem; }
+  table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid rgba(128,128,128,0.3); }
+  th { font-weight: 600; }
+  blockquote { margin: 0.75rem 0; padding: 0.5rem 0.9rem; border-left: 3px solid rgba(128,128,128,0.5); opacity: 0.9; }
+  code { font-size: 0.85em; background: rgba(128,128,128,0.15); padding: 0.1em 0.3em; border-radius: 3px; }
+  hr { border: none; border-top: 1px solid rgba(128,128,128,0.3); margin: 1.5rem 0; }
+  ul { padding-left: 1.2rem; }
+  li { margin-bottom: 0.3rem; }
+  a { color: inherit; }
+  .bar-track { background: rgba(128,128,128,0.15); border-radius: 3px; overflow: hidden; height: 10px; width: 100%; }
+  .bar-fill { height: 100%; }
+  .stat { font-size: 2rem; font-weight: 700; }
+  .stat-label { opacity: 0.7; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<p style="opacity:0.7;font-size:0.85rem">Fabricated example — activity data invented for illustration, not real training. Weekly targets shown are the real frozen plan (<code>plan/plan.lock.json</code>).</p>
+<h1>Marathon 2026 — dashboard</h1>
+<p class="stat-label">as of 04-10-2026</p>
+
+<div class="stat">4</div>
+<div class="stat-label">weeks to race (01-11-2026)</div>
+
+<h2>Travel block</h2>
+<p>14-09 → 27-09 — opportunistic long run, no quality, no gym (bodyweight only)</p>
+
+<h2>Plan vs actual, week by week</h2>
+<p class="stat-label">"Higdon Long"/"Higdon weekly volume" are Hal Higdon's
+original Intermediate 1 plan (plan/plan-source.md), unedited, aligned on
+marathon week: his 18-week plan and this 14-week one both end race week, so
+our week N lines up with his week N+4 (his weeks 1-4 have no equivalent
+here). Not the same as what this plan explicitly borrows from Higdon week-
+for-week (see each week's <code>source_week</code> in plan.lock.json) — this
+is just a fixed same-distance-to-race reference point.</p>
+<table>
+  <tr>
+    <th>Week</th><th>Week to event</th><th>Block</th><th>Long run</th>
+    <th>Weekly volume</th><th>Run days</th>
+    <th>Higdon Long</th><th>Higdon weekly volume</th>
+  </tr>
+  <tr>
+  <td>Week 1 · w/c 27-07</td>
+  <td>13</td>
+  <td>build</td>
+  <td>11mi planned / 11.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>25mi / 25.9mi
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>5d planned / 5d</td>
+  <td>12mi</td>
+  <td>30mi</td>
+</tr><tr>
+  <td>Week 2 · w/c 03-08</td>
+  <td>12</td>
+  <td>build</td>
+  <td>12mi planned / 12.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>25mi / 23.9mi
+      <div class="bar-track"><div class="bar-fill" style="width:96%;background:currentColor"></div></div></td>
+  <td>5d planned / 5d</td>
+  <td>9mi</td>
+  <td>26mi</td>
+</tr><tr>
+  <td>Week 3 · w/c 10-08</td>
+  <td>11</td>
+  <td>build</td>
+  <td>9mi planned / 9.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>22mi / 20.9mi
+      <div class="bar-track"><div class="bar-fill" style="width:95%;background:currentColor"></div></div></td>
+  <td>5d planned / 5d</td>
+  <td>14mi</td>
+  <td>36mi</td>
+</tr><tr>
+  <td>Week 4 · w/c 17-08</td>
+  <td>10</td>
+  <td>build</td>
+  <td>13mi planned / 13.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>30mi / 28.6mi
+      <div class="bar-track"><div class="bar-fill" style="width:95%;background:currentColor"></div></div></td>
+  <td>5d planned / 5d</td>
+  <td>15mi</td>
+  <td>37mi</td>
+</tr><tr>
+  <td>Week 5 · w/c 24-08</td>
+  <td>9</td>
+  <td>build</td>
+  <td>16mi planned / 16.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>34mi / 30.9mi
+      <div class="bar-track"><div class="bar-fill" style="width:91%;background:currentColor"></div></div></td>
+  <td>5d planned / 5d</td>
+  <td>13.1mi</td>
+  <td>26.1mi</td>
+</tr><tr>
+  <td>Week 6 · w/c 31-08</td>
+  <td>8</td>
+  <td>build</td>
+  <td>18mi planned / 18.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>42mi / 42.5mi
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>5d planned / 5d</td>
+  <td>17mi</td>
+  <td>41mi</td>
+</tr><tr>
+  <td>Week 7 · w/c 07-09</td>
+  <td>7</td>
+  <td>pre_travel</td>
+  <td>15mi planned / 15.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>28mi / 27.8mi
+      <div class="bar-track"><div class="bar-fill" style="width:99%;background:currentColor"></div></div></td>
+  <td>5d planned / 5d</td>
+  <td>18mi</td>
+  <td>44mi</td>
+</tr><tr style="background:rgba(255,180,0,0.08)">
+  <td>Week 8 · w/c 14-09</td>
+  <td>6</td>
+  <td>travel_italy</td>
+  <td>12mi planned / 12.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>19mi / 19.3mi
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>3d planned / 3d</td>
+  <td>13mi</td>
+  <td>36mi</td>
+</tr><tr style="background:rgba(255,180,0,0.08)">
+  <td>Week 9 · w/c 21-09</td>
+  <td>5</td>
+  <td>travel_italy</td>
+  <td>14mi planned / 14.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>24mi / 24.2mi
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>4d planned / 4d</td>
+  <td>20mi</td>
+  <td>43mi</td>
+</tr><tr>
+  <td>Week 10 · w/c 28-09</td>
+  <td>4</td>
+  <td>return</td>
+  <td>14mi planned / 14.0mi actual
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>21mi / 21.6mi
+      <div class="bar-track"><div class="bar-fill" style="width:100%;background:currentColor"></div></div></td>
+  <td>3d planned / 3d</td>
+  <td>12mi</td>
+  <td>35mi</td>
+</tr><tr>
+  <td>Week 11 · w/c 05-10</td>
+  <td>3</td>
+  <td>push</td>
+  <td>20mi planned / — actual
+      </td>
+  <td>46mi / —
+      </td>
+  <td>5d planned / —</td>
+  <td>20mi</td>
+  <td>43mi</td>
+</tr><tr>
+  <td>Week 12 · w/c 12-10</td>
+  <td>2</td>
+  <td>taper</td>
+  <td>12mi planned / — actual
+      </td>
+  <td>28mi / —
+      </td>
+  <td>4d planned / —</td>
+  <td>12mi</td>
+  <td>32mi</td>
+</tr><tr>
+  <td>Week 13 · w/c 19-10</td>
+  <td>1</td>
+  <td>taper</td>
+  <td>8mi planned / — actual
+      </td>
+  <td>21mi / —
+      </td>
+  <td>4d planned / —</td>
+  <td>8mi</td>
+  <td>24mi</td>
+</tr><tr>
+  <td>Week 14 · w/c 26-10</td>
+  <td>0</td>
+  <td>taper</td>
+  <td>26.2mi planned / — actual
+      </td>
+  <td>35.2mi / —
+      </td>
+  <td>4d planned / —</td>
+  <td>0mi</td>
+  <td>9mi</td>
+</tr>
+</table>
+
+</body>
+</html>

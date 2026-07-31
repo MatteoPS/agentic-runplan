@@ -1,0 +1,213 @@
+# agentic-runplan
+
+A local, agent-driven system that turns a fixed training plan into a rule
+engine instead of a vibe. I built this to get myself to the NYC Marathon
+(01-11-2026) without either blindly following a generic plan or quietly
+talking myself out of it on a bad day — but the actual mechanism has nothing
+marathon-specific about it. Swap in a different plan and it works for any
+fixed-endpoint program: a different race distance, a strength cycle, a
+diet — anything with a start date, an end date, and rules about how much you
+can deviate along the way.
+
+**The core idea:** a plan is only useful if it's actually followed, and
+"actually followed" needs a real definition — which parts are load-bearing
+and immutable (a marathon's 20-miler doesn't move), which are free to
+reshuffle, and which deviations require an explicit, logged reason rather
+than a mood. `plan/plan.lock.json` encodes the plan once, frozen.
+`src/mc/rules.py` is ~30 explicit rules (`CLAUDE.md` §6) grouped into what
+can never change, what can be shuffled under constraints (the travel
+machinery is the most interesting part — see below), what's always free to
+adjust, and hard safety stops. Every proposed change to the plan is checked
+against that engine before it's shown to me, and every deviation gets a
+reason code from a closed set, logged — so "I felt tired" never quietly
+becomes the new plan.
+
+It talks to Garmin Connect and intervals.icu to pull real training and
+wellness data, cross-checks the two sources against each other, and reasons
+about that data — not vibes — when deciding what today's session should be
+and whether a rule allows bending it. It's designed to be run day-to-day
+through [Claude Code](https://claude.com/product/claude-code) slash commands
+(`/daily`, `/week`, `/travel`), with `CLAUDE.md` as the actual governing
+contract for how an AI agent is and isn't allowed to reason about the plan —
+not documentation of intent, but rules an agent is instructed to enforce
+even against direct pressure to bend them.
+
+See `examples/` for fabricated sample output (what `/daily` actually
+produces) without any of my real training or health data — real output and
+logs are gitignored (`out/`, `log/`, `data/`) since they'd otherwise contain
+that data once run against a real account.
+
+## What it actually does
+
+- **Pulls real data** from Garmin Connect and intervals.icu, cross-checks
+  the two sources against each other, and tells you plainly when something's
+  stale or missing rather than pretending it isn't (`mc sync`).
+- **Turns the cache into a daily digest** — data health, actual habitual
+  training times (weekday vs. weekend, AM vs. PM), recent activity log,
+  rolling volume, and a wellness snapshot (`mc digest`).
+- **Holds a frozen, immutable plan** (`plan/plan.lock.json`) — in my case a
+  Hal Higdon Intermediate 1 marathon plan compressed 18→14 weeks, with a
+  3-week travel block built in as a first-class part of the plan (not a pile
+  of one-off overrides) and a reduced-running-days adaptation for a shin
+  injury history.
+- **Enforces the rules for real.** `rules.py` checks any proposed week
+  against the plan — protected long runs, compliance floors, a "no
+  increases even if I feel great" ceiling, aerobic-load ratios, the whole
+  travel-shuffling machinery (move within the week → split same-day → swap
+  with an adjacent week → reduce, in that strict priority order, never
+  skipping ahead), safety stops for real symptoms, and an anti-drift system
+  that catches when overrides are becoming the norm instead of the
+  exception.
+- **Tells you what a substitution actually costs** (`mc equiv`) — cross-
+  training options for any prescribed session, with a real percentage and
+  what specifically you lose, sourced from real research, not made-up
+  numbers. Some sessions (a marathon's long run, in my case) never get a
+  substitute — that's a hard rule, not a suggestion.
+- **Can push workouts to a device** (Garmin Connect here), but only when you
+  say so — `mc push` always shows a full preview first and requires an
+  explicit confirmation flag before it touches your real account.
+
+## Setup
+
+You need Python 3.12+ and [uv](https://docs.astral.sh/uv/). From the repo
+root:
+
+```
+uv sync
+```
+
+Then create `.env` (copied from `.env.example`) with your own credentials —
+**edit this file yourself**, this tool will never ask you to paste secrets
+into a chat:
+
+```
+GARMIN_EMAIL=you@example.com
+GARMIN_PASSWORD=your-password
+INTERVALS_API_KEY=your-intervals-api-key
+INTERVALS_ATHLETE_ID=iXXXXXX
+```
+
+`INTERVALS_API_KEY` and `INTERVALS_ATHLETE_ID` are both on your intervals.icu
+Settings page. Your intervals.icu account needs to actually have Garmin
+connected to it (in intervals.icu's own settings) for it to have any
+activity history to reconcile against.
+
+First run needs to happen in your own terminal, not through an agent — if
+your Garmin account has MFA on (probably does), it'll prompt for a code
+interactively:
+
+```
+uv run mc sync
+```
+
+After that, a session token is cached under `data/.garmin_tokens/`
+(gitignored) and you won't need to enter an MFA code again unless the cache
+is invalidated.
+
+## Normal use — a typical day
+
+Most days, you'd just run the `/daily` slash command in Claude Code. It:
+
+1. Runs `mc sync` then `mc digest` so everything reflects real, fresh data.
+2. Reads the digest, the locked plan, and recent training log.
+3. Asks up to 4 quick questions — how you feel (1-10), sleep, any injury
+   symptoms specific to your plan, anything changing in the next week. Never
+   more than that, never padded with questions the data already answers.
+4. Runs `mc check` against the current week and, if anything's off, proposes
+   a compliant alternative instead of just noting the problem.
+5. Writes `out/today.md` (and its HTML twin) — today's session, why, a
+   substitution table in case you can't or shouldn't do it, a short sourced
+   strength/mobility block, the rest of the week, and a compliance line that
+   never softens the framing if you're behind.
+
+If you want to see the plan without the full ritual:
+
+```
+uv run mc status              # this week: plan vs actual, compliance, ratios
+uv run mc week --week 6       # any specific week
+uv run mc check               # run the rule engine against the current week
+uv run mc equiv "8 mi easy"   # what would elliptical/bike get me instead?
+```
+
+Other slash commands: `/week` (Monday review — compliance trend, next week's
+layout), `/travel` (an unplanned trip — reshuffles affected weeks under the
+travel rules), `/italy` (my known trip block specifically — a template for
+any pre-planned disruption baked into the plan up front), `/push` (preview
+and push upcoming workouts to Garmin, always with an explicit confirmation
+step).
+
+## CLI reference
+
+Everything runs as `uv run mc <command>`.
+
+| Command                                                     | What it does                                                                                                                                                                |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mc sync [--since DAYS] [--source garmin\|intervals\|both]` | Pull fresh data. Never runs automatically — this is the only thing that talks to Garmin's API.                                                                             |
+| `mc digest [--date DD-MM]`                                | Regenerate the markdown digest from cached data.                                                                                                                            |
+| `mc status`                                               | Current week: plan vs. actual, compliance floor, long-run ratio.                                                                                                            |
+| `mc check`                                                | Run the rule engine against the current week and print any violations.                                                                                                      |
+| `mc week [--week N \| --wc DD-MM]`                         | Show any week's plan and actuals.                                                                                                                                           |
+| `mc equiv "8 mi easy"`                                    | Substitution table for a prescribed session.                                                                                                                                |
+| `mc strength N --week-start DD-MM [...]`                  | This week's fixed strength day(s), current progression tier, and done/missed confirmation + auto-reschedule for a missed fixed day.                                        |
+| `mc render [--all]`                                       | Markdown → standalone HTML.`--all` also regenerates `dashboard.html`.                                                                                                  |
+| `mc log "<text>"`                                         | Append a note to today's session log.                                                                                                                                       |
+| `mc propose "<text>" [--date DD-MM]`                       | Record today's proposed session into `log/training-log.md`. Its Actual column fills in automatically by the next day's `mc digest`, once real data exists — a running proposed-vs-actual table, so a missed or swapped session is never lost track of.                                                                                                                                       |
+| `mc push --date DD-MM [--option NAME] [--dry-run] [--yes]` | Preview or push a workout to Garmin — `run`, `elliptical`, or `bike`, each as its own real Garmin workout type. `--option` picks a specific substitution-table alternative (e.g. `--option bike`) instead of the primary Today prescription. `--dry-run` prints the JSON payload with no network call; a real push needs `--yes` and will refuse outright if it violates a rule. |
+| `mc unpush --date DD-MM`                                  | Remove a previously pushed workout.                                                                                                                                         |
+
+## Project layout
+
+```
+src/mc/          the actual system: sync, digest, plan, rules, equivalence, render, cli, push, strength
+plan/            plan-source.md (verbatim Higdon), plan.md (compressed + reasoning),
+                 plan.lock.json (frozen, immutable — see CLAUDE.md for how it's protected)
+context/         equivalence.md (sourced cross-training research), overrides.md, athlete context
+log/             training-log.md, and a dated file per day under sessions/ — gitignored, real data
+data/            raw API caches and sync state — gitignored, regenerated by mc sync, real data
+out/             today.md/.html, dashboard.html — gitignored, regenerated, real data
+examples/        fabricated sample output/logs/data showing the shape of the above without real data
+.claude/commands/ the slash commands (daily, week, travel, italy, push)
+tests/           pytest — 209 tests covering the rule engine, sync reconciliation, the equivalence
+                 engine, digest generation, strength progression, and push.py, run against synthetic
+                 fixtures and, where it matters (like the travel-block dates), the real frozen plan
+```
+
+`CLAUDE.md` at the repo root has the full rule engine (§6) verbatim, the
+verdict vocabulary, reason codes, and date/unit conventions — that's what
+governs how any AI assistant working in this repo should behave, not just
+documentation.
+
+## Testing
+
+```
+uv run pytest
+```
+
+209 tests, no network calls — everything is checked against either a
+synthetic plan fixture built to exercise every block type, or the real
+frozen `plan.lock.json` where the test genuinely needs real dates (the
+travel-block arrival/return windows) or wants to confirm the actual frozen
+plan passes its own rule engine with zero violations.
+
+## A few things worth knowing
+
+- **Units are always miles and min/mile.** Never km.
+- **Dates are `DD-MM`, weeks are `Week N · w/c DD-MM`** (weeks start Monday)
+  — consistently, everywhere in this system.
+- **`plan.lock.json` is immutable.** Once frozen, nothing rewrites it
+  silently — see `CLAUDE.md`'s opening note on what it takes to actually
+  change it (`OVERRIDE: <reason>`, typed explicitly, never assumed).
+- **The rule engine's numbers were negotiated, not defaults.** The long-run
+  ratio caps and compliance floors in the frozen plan were adjusted from the
+  spec's own starting numbers after real discussion (see `plan/plan.md` for
+  the reasoning) — they're not approximations waiting to be "corrected."
+- This is not a substitute for medical advice. If something sounds like a
+  real injury, the system is designed to say so and stop optimising, not
+  push through it.
+- **This instance is marathon-specific by content, not by design.** The plan
+  data (`plan/plan.lock.json`), the rule numbers (§6), and the cross-training
+  research (`context/equivalence.md`) are all specific to my NYC Marathon
+  build. The engine itself (`rules.py`'s A–E rule categories, the
+  lock/override/reason-code model, the travel-shuffling priority order) is
+  generic to any fixed-endpoint plan with immutable milestones and a real
+  cost to deviating from them.

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marathon 2026 — compressed 14-week plan</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+         max-width: 820px; margin: 0 auto; padding: 1.25rem; line-height: 1.5; }
+  h1 { font-size: 1.3rem; margin-bottom: 0.3rem; }
+  h2 { font-size: 1.05rem; margin-top: 1.75rem; border-bottom: 1px solid currentColor; padding-bottom: 0.2rem; }
+  h3 { font-size: 0.95rem; margin-top: 1.25rem; }
+  table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid rgba(128,128,128,0.3); }
+  th { font-weight: 600; }
+  blockquote { margin: 0.75rem 0; padding: 0.5rem 0.9rem; border-left: 3px solid rgba(128,128,128,0.5); opacity: 0.9; }
+  code { font-size: 0.85em; background: rgba(128,128,128,0.15); padding: 0.1em 0.3em; border-radius: 3px; }
+  hr { border: none; border-top: 1px solid rgba(128,128,128,0.3); margin: 1.5rem 0; }
+  ul { padding-left: 1.2rem; }
+  li { margin-bottom: 0.3rem; }
+  a { color: inherit; }
+  .bar-track { background: rgba(128,128,128,0.15); border-radius: 3px; overflow: hidden; height: 10px; width: 100%; }
+  .bar-fill { height: 100%; }
+  .stat { font-size: 2rem; font-weight: 700; }
+  .stat-label { opacity: 0.7; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>Marathon 2026 — compressed 14-week plan</h1>
+<p>**Race: NYC Marathon, Sun 01-11-2026. Base: Hal Higdon Intermediate 1,</p>
+<p>compressed 18→14 weeks, shin-adapted, Italy travel block built in.**</p>
+<p>Units: miles and min/mile throughout.</p>
+<p>This is the human-readable plan. <code>plan.lock.json</code> (written only after</p>
+<p>approval) is the immutable machine target this plan is built from — any</p>
+<p>command that would change it must refuse and require an explicit <code>OVERRIDE:</code>.</p>
+<h2>How this was built</h2>
+<ul>
+<li><strong>§5 Step 1-2 (research + current fitness)</strong>: Higdon's own long-run-to-volume</li>
+</ul>
+<p>ratio runs 33–50% across all 18 of his weeks (computed directly from his</p>
+<p>table) against a commonly-cited 25–30% coaching guideline — confirmed via</p>
+<p>real sources, not assumed. Current fitness computed from 60 days of real</p>
+<p>synced Garmin data, not estimated: best-demonstrated week 24.5mi (w/c</p>
+<p>13-07, including an 11.1mi long run), easy pace ~9:23-9:48/mi at HR 140-145</p>
+<p>(N=22 runs, R²=0.77).</p>
+<ul>
+<li><strong>§4 (cross-training equivalence)</strong>: researched and written to</li>
+</ul>
+<p><code>context/equivalence.md</code> — elliptical 85-95%, bike 70-85% aerobic transfer</p>
+<p>per minute at matched HR/effort (both consistent with real studies), near-</p>
+<p>zero impact/tendon transfer for either. The 35% non-running cap (A8) is a</p>
+<p>reasoned convention, not a number pinned by a specific study.</p>
+<ul>
+<li><strong>Speedwork</strong>: this plan stays strictly speedwork-free, as Higdon's own</li>
+</ul>
+<p>Intermediate 1 design intends. Strides (short relaxed accelerations) are</p>
+<p>the one approved light addition — see the memory of that discussion for</p>
+<p>the reasoning if it needs revisiting.</p>
+<h2>Key decisions made during compression (confirmed with me)</h2>
+<p>1. **Current-fitness gate reference: best-demonstrated week, not the noisy</p>
+<p>8-week average.** My organic training varies 8.6-29.7mi/week; the</p>
+<p>average understates real capacity. Week 1 (21mi total, 10mi long run) is</p>
+<p>-14% vs. the 24.5mi best week — safely under the ~15% gate.</p>
+<p>2. **A9's ratio cap is per-week, set to what's realistically achieved, not a</p>
+<p>forced 0.32 everywhere.** Hitting 0.32 at an 18-20mi long run would need</p>
+<p>~56-62mi/week total training — beyond safe volume for this base, and</p>
+<p>worse than what even Higdon's own uncompressed plan achieves (33-50%).</p>
+<p>Build/push weeks land at 0.35-0.42 here — a real improvement via realistic</p>
+<p>added cross-training, shown honestly rather than forced to an unrealistic</p>
+<p>number.</p>
+<p>3. <strong>Higdon's week-9 half marathon does not survive compression.</strong> No slot</p>
+<p>fits it in the compressed structure, and the 08-08 Percy Sutton 5K already</p>
+<p>serves as the plan's benchmark/tune-up race per the athlete profile. Also,</p>
+<p>research surfaced a specific critique of that half marathon's original</p>
+<p>placement (immediately after a rest day, into hard running) as a minor</p>
+<p>recovery-principle issue — another reason to drop it, not preserve it.</p>
+<p>4. <strong>One 20-miler (week 11), not two.</strong> No defensible way was found to add a</p>
+<p>second 20 within ~7 weeks of true build+push time (after the Italy block</p>
+<p>and a non-negotiable 3-week taper) without either cutting the taper or</p>
+<p>spacing long runs unsafely close together. Net: one 20 and one 18, instead</p>
+<p>of Higdon's two 20s.</p>
+<p>5. <strong>Week 2 gets a 5th running day</strong>, to accommodate the 08-08 Percy Sutton</p>
+<p>Harlem 5K alongside that week's long run — the long run must sit ≥48h from</p>
+<p>the race (B2), so it moves earlier in the week rather than landing on</p>
+<p>Sunday right after a hard effort.</p>
+<h2>Revision 31-07-2026: build phase brought closer to Higdon's volume</h2>
+<p>I flagged, correctly, that the original compression cut running volume</p>
+<p>in the one part of the plan with no excuse for caution — full-control build</p>
+<p>weeks with no travel disruption. Checked against Higdon's actual published</p>
+<p>table: our weeks 1-7 were running 10-15% <em>below</em> Higdon's comparable weeks,</p>
+<p>driven by a 4-day/week running budget (shin-adaptation choice) that was</p>
+<p>never actually validated against his expectation of compensating for the</p>
+<p>travel-block cutback with more volume elsewhere.</p>
+<p>Research pass (31-07-2026) found the aerobic-fitness case for cross-training</p>
+<p>substitution is solid (elliptical ~85-95% transfer, null-difference RCT</p>
+<p>vs. run-only training) but the <em>durability</em> case is not: eccentric-damage</p>
+<p>resistance (the repeated-bout effect) is movement-specific and doesn't</p>
+<p>transfer from non-impact modalities, and race-performance data (Boston</p>
+<p>Marathon, 917 runners, PMC12441744) found running sessions/week and quality</p>
+<p>sessions/week independently predict finish time. Bone-stress-injury</p>
+<p>literature (Warden et al.) supports ~4-5 running days/week as the</p>
+<p><em>well-adapted</em> frequency, not a conservative compromise. Given my</p>
+<p>shin/hamstring history is genuinely mild (never sharp, never gait-changing)</p>
+<p>and is now logged daily so load adjusts reactively, the 4-day cap was</p>
+<p>over-conservative relative to both the evidence and my actual history.</p>
+<p><strong>Change</strong>: weeks 1-7 restored to Higdon's 5-running-day structure (cross on</p>
+<p>Monday as an addition, not a replacement) and long runs lengthened beyond</p>
+<p>Higdon's comparable weeks throughout. The 18-miler (week 6) and 20-miler</p>
+<p>(week 11) stay exactly as locked — A3-protected regardless. Build-phase</p>
+<p>weekly running total: 183mi → ~206mi (+13%); full-plan total: 377mi → 400mi</p>
+<p>(+6%).</p>
+<p>**Full parity with Higdon's 588mi total was considered and rejected as</p>
+<p>unsafe** — closing that gap entirely would require ~55mi/week averages in</p>
+<p>early build weeks, more than double the current best-demonstrated organic</p>
+<p>week (24.5mi), which is not a safe progression from this fitness base in a</p>
+<p>14-week compressed plan. The remaining ~188mi shortfall is structural: 4</p>
+<p>fewer weeks than Higdon's 18, one 20-miler instead of two, and real</p>
+<p>Italy-travel volume loss that this plan deliberately doesn't claw back</p>
+<p>elsewhere. Long-run length in build/pre_travel is flagged as an open item —</p>
+<p>I want it reassessed further, but the plan revisits that with real</p>
+<p>shin-log data from the first 2-3 weeks of the new 5-day structure rather</p>
+<p>than front-loading more now.</p>
+<h2>The plan</h2>
+<table><tr><th>Week</th><th>Long run</th><th>Run mi</th><th>Run days</th><th>Cross</th><th>LR ratio</th><th>Block</th></tr>
+<tr><td>Week 1 · w/c 27-07</td><td>11 mi</td><td>25 mi</td><td>5</td><td>45 min</td><td>0.38</td><td>build</td></tr>
+<tr><td>Week 2 · w/c 03-08</td><td>12 mi</td><td>25 mi</td><td>5</td><td>60 min</td><td>0.39</td><td>build — 5K race week</td></tr>
+<tr><td>Week 3 · w/c 10-08</td><td>9 mi <em>(stepback)</em></td><td>22 mi</td><td>5</td><td>45 min</td><td>0.34</td><td>build</td></tr>
+<tr><td>Week 4 · w/c 17-08</td><td>13 mi</td><td>30 mi</td><td>5</td><td>45 min</td><td>0.38</td><td>build</td></tr>
+<tr><td>Week 5 · w/c 24-08</td><td>16 mi</td><td>34 mi</td><td>5</td><td>60 min</td><td>0.40</td><td>build</td></tr>
+<tr><td>Week 6 · w/c 31-08</td><td><strong>18 mi (A3)</strong></td><td>42 mi</td><td>5</td><td>90 min</td><td>0.36</td><td>build — peak before travel</td></tr>
+<tr><td>Week 7 · w/c 07-09</td><td>15 mi</td><td>28 mi</td><td>5</td><td>30 min</td><td>0.49</td><td>pre_travel — taper into flight (depart Thu 10-09)</td></tr>
+<tr><td>Week 8 · w/c 14-09</td><td>12 mi <em>(opportunistic, 10-14 target)</em></td><td>19 mi</td><td>3</td><td>0 min</td><td>0.63</td><td>travel_italy — first 3 days easy only</td></tr>
+<tr><td>Week 9 · w/c 21-09</td><td>14 mi <em>(opportunistic, 10-14 target)</em></td><td>24 mi</td><td>4</td><td>0 min</td><td>0.58</td><td>travel_italy</td></tr>
+<tr><td>Week 10 · w/c 28-09</td><td>14 mi</td><td>21 mi</td><td>3</td><td>60 min</td><td>0.53</td><td>return — first 3 days easy (jetlag), return Wed 30-09</td></tr>
+<tr><td>Week 11 · w/c 05-10</td><td><strong>20 mi (A3)</strong></td><td>46 mi</td><td>5</td><td>60 min</td><td>0.39</td><td>push — exactly 3 weeks out</td></tr>
+<tr><td>Week 12 · w/c 12-10</td><td>12 mi</td><td>28 mi</td><td>4</td><td>0 min</td><td>0.43</td><td>taper — Higdon wk16 verbatim</td></tr>
+<tr><td>Week 13 · w/c 19-10</td><td>8 mi</td><td>21 mi</td><td>4</td><td>0 min</td><td>0.38</td><td>taper — Higdon wk17 verbatim</td></tr>
+<tr><td>Week 14 · w/c 26-10</td><td><strong>Marathon</strong></td><td>35.2 mi</td><td>4</td><td>0 min</td><td>0.74</td><td>taper — race week, Higdon wk18 verbatim</td></tr>
+</table>
+<p>Cross-training is elliptical/bike (gym access every day in NYC per the</p>
+<p>athlete profile), matched by time at effort/HR per §4 — never by machine</p>
+<p>distance. Monday is always a cross/rest day per Higdon's own design; the</p>
+<p>weekly cross-training minutes shown above are an <em>addition</em> on top of a</p>
+<p>5-day running week in weeks 1-7 (revised 31-07-2026 — originally a 4-day</p>
+<p>running budget with cross as a partial replacement; see the revision note</p>
+<p>above for why that changed), not a substitute for running days.</p>
+<p>Day-of-week placement above is illustrative, not frozen — B1 explicitly</p>
+<p>allows the long run to move within its own week, and the full B-rule</p>
+<p>shuffling machinery (step 7+) handles real week-to-week adaptation. Only the</p>
+<p>weekly aggregates in this table (and in <code>plan.lock.json</code> once written) are</p>
+<p>locked.</p>
+<h2>Blocks</h2>
+<table><tr><th>Block</th><th>Weeks</th><th>Compliance floor</th><th>Notes</th></tr>
+<tr><td>build</td><td>1–6</td><td>0.95</td><td>full control, no travel disruption — high bar (raised from 0.90 at my request)</td></tr>
+<tr><td>pre_travel</td><td>7</td><td>0.90</td><td>full control minus the Thursday flight day itself (raised from 0.85)</td></tr>
+<tr><td>travel_italy</td><td>8–9</td><td>0.40</td><td>opportunistic long run, no quality, no gym — explicitly not relying on the long run happening (lowered from 0.55 at my request)</td></tr>
+<tr><td>return</td><td>10</td><td>0.55</td><td>jetlag/rebuild, gym access resumes (lowered from 0.70)</td></tr>
+<tr><td>push</td><td>11</td><td>0.95</td><td></td></tr>
+<tr><td>taper</td><td>12–14</td><td>1.00 (frozen)</td><td>no additions, no substitutions, no making up missed volume</td></tr>
+</table>
+<p>Compliance floors deliberately trade strictness for realism across the plan:</p>
+<p>tight where I have full control (build, pre_travel), loose where travel</p>
+<p>genuinely limits what's achievable (Italy, return) — rather than a uniform</p>
+<p>standard that would either nag unrealistically during Italy or let slack</p>
+<p>creep into the phases where there's no good excuse for it.</p>
+<h2>What's still open</h2>
+<ul>
+<li>Exact day-of-week layout for each week (B-rule territory, adapts to real</li>
+</ul>
+<p>conditions — not frozen).</p>
+<ul>
+<li>Pace/HR targets for specific sessions — the 08-08 5K result will anchor</li>
+</ul>
+<p>these per the athlete profile ("wait for the 08-08 5K result for</p>
+<p>estimation").</p>
+<ul>
+<li>Strides: added as short relaxed accelerations after easy runs per the</li>
+</ul>
+<p>research in step 4; exact frequency/placement is a daily-adaptation detail,</p>
+<p>not a locked weekly target.</p>
+</body>
+</html>

@@ -1,0 +1,288 @@
+{
+  "race_date": "2026-11-01",
+  "plan": "Hal Higdon Intermediate 1, compressed 18->14, shin-adapted, single 20-miler, Italy travel block",
+  "units": "miles",
+  "locked_at": "2026-07-28T22:24:41.389913+00:00",
+  "design_decisions": [
+    "Current-fitness gate benchmarked against best-demonstrated recent week (24.5mi, w/c 13-07), not the noisy 8-week average \u2014 organic training varies 8.6-29.7mi/wk, average understates real capacity. Confirmed with me 28-07-2026.",
+    "long_run_ratio_max is per-week, set to what's realistically achieved with sane training volume, not forced to a uniform 0.32 -- hitting 0.32 at 18-20mi long runs would need ~56-62mi/week total training. Even Higdon's own uncompressed plan never achieves 25-30% (33-50% computed across all 18 weeks). Confirmed with me 28-07-2026.",
+    "Higdon's week-9 half marathon dropped -- no slot in the compressed structure, and the 08-08 Percy Sutton 5K already serves as the plan's benchmark race. Also, research (step 4) flagged Higdon's own placement of that half marathon, immediately after a rest day into hard running, as a minor recovery-principle critique.",
+    "One 20-miler (week 11) instead of Higdon's two -- no defensible way found to add a second 20 within ~7 weeks of true build+push time without cutting the taper or unsafe long-run spacing.",
+    "Compliance floors deliberately traded strictness for realism at my explicit request 28-07-2026: build 0.90->0.95, pre_travel 0.85->0.90 (full control, no travel disruption -- high bar); travel_italy 0.55->0.40, return 0.70->0.55 (travel genuinely limits what's achievable, especially the long run in Italy, which I explicitly do not want to rely on).",
+    "REVISION 31-07-2026, confirmed with me: weeks 1-7 (build + pre_travel, full control, no travel disruption) restored to a 5-running-day structure (matching Higdon's own Tue/Wed/Thu/Sat/Sun layout, cross on Monday as an addition not a replacement) and long runs lengthened beyond Higdon's comparable weeks, on the basis that (a) my shin/hamstring symptoms have historically been mild-background-only, never sharp/gait-changing, and are now monitored daily so load can be adjusted reactively rather than pre-emptively cut; (b) research reviewed 31-07-2026 shows elliptical substitution preserves aerobic fitness (~85-95% transfer, null-difference RCT) but does NOT preserve running-specific durability -- eccentric-damage resistance / the repeated-bout effect is movement-specific and doesn't transfer from cross-training, and Boston Marathon race-performance data (PMC12441744) found running sessions/week and quality sessions/week independently predict finish time; bone-stress-injury literature (Warden et al.) supports ~4-5 running days/week as the well-adapted frequency, not a compromise. Net effect: build-phase weekly running total rises from 183mi to ~206mi (+13%) and weeks 1-7 run_days go from mostly-4 to 5; the single 20-miler (week 11, A3) and the 18-miler (week 6, A3) stay exactly as locked -- those are protected regardless. Full parity with Higdon's 588mi 18-week total was explicitly considered and rejected as unsafe: closing that gap fully would require ~55mi/week averages in early build weeks, more than double the current best-demonstrated organic week (24.5mi) and a clear violation of safe week-over-week progression -- flagged as 'something crazy' territory per my own instruction, not attempted. The remaining ~188mi shortfall vs Higdon's total is structural (4 fewer weeks, one 20-miler instead of two, and genuine Italy-travel volume loss that isn't being clawed back) -- not an artifact of over-conservative weighting. Open item, not yet decided: I separately flagged that build/pre_travel long runs should be reassessed for further lengthening -- revisit with real shin-log data from the first 2-3 weeks of the 5-day structure before pushing further, rather than front-loading more now."
+  ],
+  "weeks": [
+    {
+      "week": 1,
+      "wc": "2026-07-27",
+      "source_week": null,
+      "long_run_mi": 11,
+      "run_miles": 25,
+      "run_days": 5,
+      "cross_minutes": 45,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.39,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "build",
+      "notes": "5-day running structure restored 31-07-2026; long run raised to 11mi -- matches the 11.1mi long run already inside the 24.5mi best-demonstrated organic week, not a number beyond what's been done"
+    },
+    {
+      "week": 2,
+      "wc": "2026-08-03",
+      "source_week": null,
+      "long_run_mi": 12,
+      "run_miles": 25,
+      "run_days": 5,
+      "cross_minutes": 60,
+      "quality_sessions": 1,
+      "long_run_ratio_max": 0.4,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "build",
+      "notes": "Percy Sutton Harlem 5K Sat 08-08 (hard controlled effort, no all-out sprint finish given hamstring history); long run moves earlier in week, >=48h before race per B2; midweek miles raised 31-07-2026"
+    },
+    {
+      "week": 3,
+      "wc": "2026-08-10",
+      "source_week": null,
+      "long_run_mi": 9,
+      "run_miles": 22,
+      "run_days": 5,
+      "cross_minutes": 45,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.35,
+      "is_stepback": true,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "build",
+      "notes": "stepback -- still the lowest week in this 4-week stretch (A5 spirit preserved) even after the 31-07-2026 volume revision"
+    },
+    {
+      "week": 4,
+      "wc": "2026-08-17",
+      "source_week": null,
+      "long_run_mi": 13,
+      "run_miles": 30,
+      "run_days": 5,
+      "cross_minutes": 45,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.4,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "build",
+      "notes": "5-day structure + longer long run, 31-07-2026 revision"
+    },
+    {
+      "week": 5,
+      "wc": "2026-08-24",
+      "source_week": null,
+      "long_run_mi": 16,
+      "run_miles": 34,
+      "run_days": 5,
+      "cross_minutes": 60,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.42,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "build",
+      "notes": "5-day structure + longer long run, 31-07-2026 revision"
+    },
+    {
+      "week": 6,
+      "wc": "2026-08-31",
+      "source_week": 11,
+      "long_run_mi": 18,
+      "run_miles": 42,
+      "run_days": 5,
+      "cross_minutes": 90,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.36,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "build",
+      "notes": "peak before travel taper (A3 protected -- 18mi unchanged); midweek miles raised, cross trimmed since running now covers more of the load, 31-07-2026"
+    },
+    {
+      "week": 7,
+      "wc": "2026-09-07",
+      "source_week": null,
+      "long_run_mi": 15,
+      "run_miles": 28,
+      "run_days": 5,
+      "cross_minutes": 30,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.49,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "pre_travel",
+      "notes": "taper into travel; depart Thu 10-09; long run done early in week, before flight; 5-day structure + longer long run, 31-07-2026 revision"
+    },
+    {
+      "week": 8,
+      "wc": "2026-09-14",
+      "source_week": null,
+      "long_run_mi": 12,
+      "run_miles": 19,
+      "run_days": 3,
+      "cross_minutes": 0,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.64,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "travel_italy",
+      "notes": "opportunistic target 10-14mi (spec range), not scheduled to a fixed day, not relied upon; first 3 days after arrival (10-09) easy only; no gym, bodyweight strength only"
+    },
+    {
+      "week": 9,
+      "wc": "2026-09-21",
+      "source_week": null,
+      "long_run_mi": 14,
+      "run_miles": 24,
+      "run_days": 4,
+      "cross_minutes": 0,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.59,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "travel_italy",
+      "notes": "opportunistic target 10-14mi (spec range), not scheduled to a fixed day, not relied upon; no gym, bodyweight strength only"
+    },
+    {
+      "week": 10,
+      "wc": "2026-09-28",
+      "source_week": null,
+      "long_run_mi": 14,
+      "run_miles": 21,
+      "run_days": 3,
+      "cross_minutes": 60,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.53,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": false,
+      "block": "return",
+      "notes": "return Wed 30-09; first 3 days back easy only, jetlag/poor sleep expected; long run in back half of week"
+    },
+    {
+      "week": 11,
+      "wc": "2026-10-05",
+      "source_week": 15,
+      "long_run_mi": 20,
+      "run_miles": 46,
+      "run_days": 5,
+      "cross_minutes": 60,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.39,
+      "is_stepback": false,
+      "is_taper": false,
+      "is_twenty": true,
+      "block": "push",
+      "notes": "the push; 20mi exactly 3 weeks out, matching Higdon's last 20 (his wk15) (A3 protected)"
+    },
+    {
+      "week": 12,
+      "wc": "2026-10-12",
+      "source_week": 16,
+      "long_run_mi": 12,
+      "run_miles": 28,
+      "run_days": 4,
+      "cross_minutes": 0,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.43,
+      "is_stepback": false,
+      "is_taper": true,
+      "is_twenty": false,
+      "block": "taper",
+      "notes": "Higdon wk16 verbatim"
+    },
+    {
+      "week": 13,
+      "wc": "2026-10-19",
+      "source_week": 17,
+      "long_run_mi": 8,
+      "run_miles": 21,
+      "run_days": 4,
+      "cross_minutes": 0,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.39,
+      "is_stepback": false,
+      "is_taper": true,
+      "is_twenty": false,
+      "block": "taper",
+      "notes": "Higdon wk17 verbatim"
+    },
+    {
+      "week": 14,
+      "wc": "2026-10-26",
+      "source_week": 18,
+      "long_run_mi": 26.2,
+      "run_miles": 35.2,
+      "run_days": 4,
+      "cross_minutes": 0,
+      "quality_sessions": 0,
+      "long_run_ratio_max": 0.75,
+      "is_stepback": false,
+      "is_taper": true,
+      "is_twenty": false,
+      "block": "taper",
+      "notes": "race week: 3,4,rest,rest,2,Marathon (Higdon wk18 verbatim). Race date Sun 01-11 (A7 fixed)"
+    }
+  ],
+  "blocks": {
+    "build": {
+      "weeks": [
+        1,
+        6
+      ],
+      "compliance_floor": 0.95
+    },
+    "pre_travel": {
+      "weeks": [
+        7,
+        7
+      ],
+      "compliance_floor": 0.9
+    },
+    "travel_italy": {
+      "weeks": [
+        8,
+        9
+      ],
+      "compliance_floor": 0.4,
+      "long_run_opportunistic": true,
+      "no_quality": true,
+      "no_gym": true
+    },
+    "return": {
+      "weeks": [
+        10,
+        10
+      ],
+      "compliance_floor": 0.55
+    },
+    "push": {
+      "weeks": [
+        11,
+        11
+      ],
+      "compliance_floor": 0.95
+    },
+    "taper": {
+      "weeks": [
+        12,
+        14
+      ],
+      "compliance_floor": 1.0,
+      "frozen": true
+    }
+  }
+}

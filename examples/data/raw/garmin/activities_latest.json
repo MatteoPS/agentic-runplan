@@ -1,0 +1,17 @@
+{
+  "fetched_at": "2026-08-12T10:15:04.000000+00:00",
+  "source": "get_activities_by_date",
+  "data": [
+    {
+      "activityId": 99000000001,
+      "activityName": "Example Morning Run",
+      "startTimeLocal": "2026-08-12 06:42:00",
+      "startTimeGMT": "2026-08-12 10:42:00",
+      "activityType": { "typeId": 1, "typeKey": "running" },
+      "distance": 8046.72,
+      "duration": 2220.0,
+      "averageHR": 144,
+      "elevationGain": 32.0
+    }
+  ]
+}

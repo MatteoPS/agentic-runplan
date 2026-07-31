@@ -1,0 +1,15 @@
+{
+  "fetched_at": "2026-08-12T10:15:06.000000+00:00",
+  "source": "intervals.icu /athlete/{id}/activities",
+  "data": [
+    {
+      "id": "i99000000001",
+      "type": "Run",
+      "start_date_local": "2026-08-12T06:42:00",
+      "distance": 8046.72,
+      "moving_time": 2220,
+      "average_heartrate": 144,
+      "name": "Example Morning Run"
+    }
+  ]
+}

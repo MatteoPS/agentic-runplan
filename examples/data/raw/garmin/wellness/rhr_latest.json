@@ -1,0 +1,15 @@
+{
+  "fetched_at": "2026-08-12T10:15:03.000000+00:00",
+  "source": "get_rhr_day",
+  "data": {
+    "statisticsStartDate": "2026-08-12",
+    "statisticsEndDate": "2026-08-12",
+    "allMetrics": {
+      "metricsMap": {
+        "WELLNESS_RESTING_HEART_RATE": [
+          { "value": 52.0 }
+        ]
+      }
+    }
+  }
+}
