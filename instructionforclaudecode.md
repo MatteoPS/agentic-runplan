@@ -80,7 +80,6 @@ times (weekday vs weekend, by session type). Use the pattern when scheduling —
 don't propose a 6am session if I never run at 6am, and factor heat into which
 slot you recommend in summer.
 
-
 * **Goal marathon time: ** finish strong, close to 4h 4h 15min. wait for the 08-08 5K result for estimation, check latest Garmin estiames if you can or ask me and i'll provide them over time. I prefer HR zones, but also estimate the avg pace you think i should do a workout
 * **gym access in NYC** (elliptical/bike/treadmill/weights), access everyday
 

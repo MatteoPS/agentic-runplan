@@ -1,36 +1,29 @@
 # agentic-runplan
 
-A local, agent-driven system that turns a fixed training plan into a rule
-engine instead of a vibe. I built this to get myself to the NYC Marathon
-(01-11-2026) without either blindly following a generic plan or quietly
-talking myself out of it on a bad day — but the actual mechanism has nothing
-marathon-specific about it. Swap in a different plan and it works for any
-fixed-endpoint program: a different race distance, a strength cycle, a
-diet — anything with a start date, an end date, and rules about how much you
-can deviate along the way.
+A local system that daily adjusts a fixed training plan with a rule-based
+agent-driven tool. Built to get me to the [TCS NYC Marathon](https://www.nyrr.org/tcsnycmarathon) on November 1st 2026.
 
-**The core idea:** a plan is only useful if it's actually followed, and
-"actually followed" needs a real definition — which parts are load-bearing
-and immutable (a marathon's 20-miler doesn't move), which are free to
-reshuffle, and which deviations require an explicit, logged reason rather
-than a mood. `plan/plan.lock.json` encodes the plan once, frozen.
-`src/mc/rules.py` is ~30 explicit rules (`CLAUDE.md` §6) grouped into what
-can never change, what can be shuffled under constraints (the travel
-machinery is the most interesting part — see below), what's always free to
-adjust, and hard safety stops. Every proposed change to the plan is checked
-against that engine before it's shown to me, and every deviation gets a
-reason code from a closed set, logged — so "I felt tired" never quietly
-becomes the new plan.
+The mechanism is NOT marathon or running-specific. Swap in a different plan and it works for any fixed-endpoint program: a race, a strength cycle, a diet — anything with a start date, an end date, and rules about how much you can deviate along the way.
 
-It talks to Garmin Connect and intervals.icu to pull real training and
-wellness data, cross-checks the two sources against each other, and reasons
-about that data — not vibes — when deciding what today's session should be
-and whether a rule allows bending it. It's designed to be run day-to-day
-through [Claude Code](https://claude.com/product/claude-code) slash commands
-(`/daily`, `/week`, `/travel`), with `CLAUDE.md` as the actual governing
-contract for how an AI agent is and isn't allowed to reason about the plan —
-not documentation of intent, but rules an agent is instructed to enforce
-even against direct pressure to bend them.
+- **Plan** — `plan/plan.lock.json`, frozen. Encodes the plan once: what
+  happens, when, and how much.
+- **Rules** — `src/mc/rules.py`, ~30 explicit rules (`CLAUDE.md` §6):
+  ```
+  A  immutable       — long-run distance, compliance floor, race date
+  B  shuffleable     — travel machinery, under hard constraints
+  C  free to adjust  — reordering, pace, cross-training swaps
+  D  safety stops    — refuse to produce a session
+  E  anti-drift      — every deviation logged with a reason code
+  ```
+- **Data** — Garmin Connect + intervals.icu, cross-checked against each
+  other, feeding real numbers into every decision.
+- **Agent** — [Claude Code](https://claude.com/product/claude-code) slash
+  commands (`/daily`, `/week`, `/travel`) run it day-to-day, governed by
+  `CLAUDE.md`.
+
+Every proposed change is checked against the rule engine before it's shown;
+every deviation gets a reason code from a closed set, logged — so
+"I felt tired" never quietly becomes the new plan.
 
 See `examples/` for fabricated sample output (what `/daily` actually
 produces) without any of my real training or health data — real output and
@@ -46,7 +39,7 @@ that data once run against a real account.
   training times (weekday vs. weekend, AM vs. PM), recent activity log,
   rolling volume, and a wellness snapshot (`mc digest`).
 - **Holds a frozen, immutable plan** (`plan/plan.lock.json`) — in my case a
-  Hal Higdon Intermediate 1 marathon plan compressed 18→14 weeks, with a
+  [Hal Higdon Intermediate 1 marathon](https://www.halhigdon.com/training-programs/marathon-training/intermediate-1-marathon/) plan compressed 18→14 weeks, with a
   3-week travel block built in as a first-class part of the plan (not a pile
   of one-off overrides) and a reduced-running-days adaptation for a shin
   injury history.
@@ -140,20 +133,20 @@ step).
 
 Everything runs as `uv run mc <command>`.
 
-| Command                                                     | What it does                                                                                                                                                                |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mc sync [--since DAYS] [--source garmin\|intervals\|both]` | Pull fresh data. Never runs automatically — this is the only thing that talks to Garmin's API.                                                                             |
-| `mc digest [--date DD-MM]`                                | Regenerate the markdown digest from cached data.                                                                                                                            |
-| `mc status`                                               | Current week: plan vs. actual, compliance floor, long-run ratio.                                                                                                            |
-| `mc check`                                                | Run the rule engine against the current week and print any violations.                                                                                                      |
-| `mc week [--week N \| --wc DD-MM]`                         | Show any week's plan and actuals.                                                                                                                                           |
-| `mc equiv "8 mi easy"`                                    | Substitution table for a prescribed session.                                                                                                                                |
-| `mc strength N --week-start DD-MM [...]`                  | This week's fixed strength day(s), current progression tier, and done/missed confirmation + auto-reschedule for a missed fixed day.                                        |
-| `mc render [--all]`                                       | Markdown → standalone HTML.`--all` also regenerates `dashboard.html`.                                                                                                  |
-| `mc log "<text>"`                                         | Append a note to today's session log.                                                                                                                                       |
-| `mc propose "<text>" [--date DD-MM]`                       | Record today's proposed session into `log/training-log.md`. Its Actual column fills in automatically by the next day's `mc digest`, once real data exists — a running proposed-vs-actual table, so a missed or swapped session is never lost track of.                                                                                                                                       |
-| `mc push --date DD-MM [--option NAME] [--dry-run] [--yes]` | Preview or push a workout to Garmin — `run`, `elliptical`, or `bike`, each as its own real Garmin workout type. `--option` picks a specific substitution-table alternative (e.g. `--option bike`) instead of the primary Today prescription. `--dry-run` prints the JSON payload with no network call; a real push needs `--yes` and will refuse outright if it violates a rule. |
-| `mc unpush --date DD-MM`                                  | Remove a previously pushed workout.                                                                                                                                         |
+| Command                                                      | What it does                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mc sync [--since DAYS] [--source garmin\|intervals\|both]`  | Pull fresh data. Never runs automatically — this is the only thing that talks to Garmin's API.                                                                                                                                                                                                                                                                                                |
+| `mc digest [--date DD-MM]`                                 | Regenerate the markdown digest from cached data.                                                                                                                                                                                                                                                                                                                                               |
+| `mc status`                                                | Current week: plan vs. actual, compliance floor, long-run ratio.                                                                                                                                                                                                                                                                                                                               |
+| `mc check`                                                 | Run the rule engine against the current week and print any violations.                                                                                                                                                                                                                                                                                                                         |
+| `mc week [--week N \| --wc DD-MM]`                          | Show any week's plan and actuals.                                                                                                                                                                                                                                                                                                                                                              |
+| `mc equiv "8 mi easy"`                                     | Substitution table for a prescribed session.                                                                                                                                                                                                                                                                                                                                                   |
+| `mc strength N --week-start DD-MM [...]`                   | This week's fixed strength day(s), current progression tier, and done/missed confirmation + auto-reschedule for a missed fixed day.                                                                                                                                                                                                                                                            |
+| `mc render [--all]`                                        | Markdown → standalone HTML.`--all` also regenerates `dashboard.html`.                                                                                                                                                                                                                                                                                                                     |
+| `mc log "<text>"`                                          | Append a note to today's session log.                                                                                                                                                                                                                                                                                                                                                          |
+| `mc propose "<text>" [--date DD-MM]`                       | Record today's proposed session into`log/training-log.md`. Its Actual column fills in automatically by the next day's `mc digest`, once real data exists — a running proposed-vs-actual table, so a missed or swapped session is never lost track of.                                                                                                                                     |
+| `mc push --date DD-MM [--option NAME] [--dry-run] [--yes]` | Preview or push a workout to Garmin —`run`, `elliptical`, or `bike`, each as its own real Garmin workout type. `--option` picks a specific substitution-table alternative (e.g. `--option bike`) instead of the primary Today prescription. `--dry-run` prints the JSON payload with no network call; a real push needs `--yes` and will refuse outright if it violates a rule. |
+| `mc unpush --date DD-MM`                                   | Remove a previously pushed workout.                                                                                                                                                                                                                                                                                                                                                            |
 
 ## Project layout
 
