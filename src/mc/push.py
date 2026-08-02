@@ -137,20 +137,45 @@ class SessionSpec:
     pace_min_per_mi: float | None = None  # informational only, run modality only — never a hard target on the long run
 
 
+def _build_steps(
+    duration_s: float,
+    warmup_target: dict[str, Any] | None,
+    main_target: dict[str, Any] | None,
+    cooldown_target: dict[str, Any] | None,
+) -> list[ExecutableStep]:
+    """A warmup/cooldown split only tells the watch something when its target
+    actually differs from the main set's. Today every session is a single
+    constant HR band, so the three phases were identical -- three alerts, one
+    instruction, and a mid-run "cooldown" banner for a run that was all one
+    effort. Collapse to one step whenever the targets match.
+
+    The split path below is deliberately kept rather than deleted: it returns
+    the day warmup gets a real target of its own (an easier HR band, or a
+    slower pace zone on pace days). This is not an oversight -- it is the
+    condition under which the split is meaningful.
+    """
+    if warmup_target == main_target == cooldown_target:
+        return [_step(1, StepType.INTERVAL, "interval", duration_s, main_target)]
+
+    main_s = max(MIN_MAIN_SECONDS, duration_s - WARMUP_SECONDS - COOLDOWN_SECONDS)
+    return [
+        _step(1, StepType.WARMUP, "warmup", WARMUP_SECONDS, warmup_target),
+        _step(2, StepType.INTERVAL, "interval", main_s, main_target),
+        _step(3, StepType.COOLDOWN, "cooldown", COOLDOWN_SECONDS, cooldown_target),
+    ]
+
+
 def build_workout(week: PlanWeek, session_date: date, session: SessionSpec, easy_pace_min_per_mi: float) -> BaseWorkout:
     if session.duration_min is not None:
         duration_min = session.duration_min
     else:
         duration_min = session.distance_mi * (session.pace_min_per_mi or easy_pace_min_per_mi)
     duration_s = duration_min * 60
-    main_s = max(MIN_MAIN_SECONDS, duration_s - WARMUP_SECONDS - COOLDOWN_SECONDS)
 
+    # Same target for all three phases -- including pace sessions, which today
+    # carry no distinct warmup target either. See _build_steps.
     target = _hr_zone_target(session.hr_low, session.hr_high)
-    steps = [
-        _step(1, StepType.WARMUP, "warmup", WARMUP_SECONDS, target),
-        _step(2, StepType.INTERVAL, "interval", main_s, target),
-        _step(3, StepType.COOLDOWN, "cooldown", COOLDOWN_SECONDS, target),
-    ]
+    steps = _build_steps(duration_s, target, target, target)
 
     description = f"HR {session.hr_low}-{session.hr_high}"
     if session.pace_min_per_mi:

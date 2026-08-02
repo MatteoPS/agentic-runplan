@@ -37,15 +37,47 @@ def test_workout_name_format(synthetic_plan):
     assert workout.workoutName == "MC W1 29-07 easy"
 
 
-def test_workout_has_warmup_main_cooldown(synthetic_plan):
+def test_constant_hr_collapses_to_a_single_step(synthetic_plan):
+    """A warmup/cooldown split at the same HR as the main set is three alerts
+    for one instruction -- see push._build_steps."""
     week = synthetic_plan.week_by_number(1)
     session = push.SessionSpec(session_type="easy", distance_mi=8, hr_low=135, hr_high=145)
     workout = push.build_workout(week, date(2026, 7, 29), session, easy_pace_min_per_mi=9.75)
     steps = workout.workoutSegments[0].workoutSteps
+    assert len(steps) == 1
+    assert steps[0].stepType["stepTypeKey"] == "interval"
+    # the single step spans the whole session -- no time is lost to phases
+    # that no longer exist
+    assert steps[0].endConditionValue == pytest.approx(8 * 9.75 * 60)
+
+
+def test_pace_session_also_collapses(synthetic_plan):
+    """Pace days carry no distinct warmup target today either, so they take
+    the same path. This test is the tripwire: give warmup its own target and
+    this is the assertion that should be revisited."""
+    week = synthetic_plan.week_by_number(1)
+    session = push.SessionSpec(session_type="pace", distance_mi=6, hr_low=150, hr_high=160)
+    workout = push.build_workout(week, date(2026, 7, 29), session, easy_pace_min_per_mi=9.75)
+    assert len(workout.workoutSegments[0].workoutSteps) == 1
+
+
+def test_differing_targets_still_produce_three_steps():
+    """The split path is retained for the day warmup gets its own target."""
+    easy = push._hr_zone_target(120, 135)
+    hard = push._hr_zone_target(150, 165)
+    steps = push._build_steps(3600, easy, hard, easy)
     assert len(steps) == 3
-    assert steps[0].stepType["stepTypeKey"] == "warmup"
-    assert steps[1].stepType["stepTypeKey"] == "interval"
-    assert steps[2].stepType["stepTypeKey"] == "cooldown"
+    assert [s.stepType["stepTypeKey"] for s in steps] == ["warmup", "interval", "cooldown"]
+    assert steps[0].endConditionValue == push.WARMUP_SECONDS
+    assert steps[1].endConditionValue == 3600 - push.WARMUP_SECONDS - push.COOLDOWN_SECONDS
+    assert steps[2].endConditionValue == push.COOLDOWN_SECONDS
+
+
+def test_estimated_duration_unchanged_by_step_collapse(synthetic_plan):
+    week = synthetic_plan.week_by_number(1)
+    session = push.SessionSpec(session_type="easy", distance_mi=8, hr_low=135, hr_high=145)
+    workout = push.build_workout(week, date(2026, 7, 29), session, easy_pace_min_per_mi=9.75)
+    assert workout.estimatedDurationInSecs == round(8 * 9.75 * 60)
 
 
 def test_all_steps_carry_hr_target(synthetic_plan):

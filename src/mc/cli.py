@@ -9,6 +9,7 @@ from rich.table import Table
 from mc import config as cfg
 from mc import digest as digest_mod
 from mc import equivalence as eq
+from mc import export as export_mod
 from mc import plan as plan_mod
 from mc import push as push_mod
 from mc import render as render_mod
@@ -283,6 +284,36 @@ def strength(
     console.print(table)
 
 
+def _report_export() -> None:
+    """Never silent success — an export you can't see is one you can't trust."""
+    try:
+        result = export_mod.export()
+    except export_mod.ExportError as e:
+        console.print(f"[red]export failed:[/red] {e}")
+        return
+    if not result.enabled:
+        return
+    if result.copied:
+        console.print(f"exported {len(result.copied)} file(s) to {result.destination}")
+    else:
+        console.print(f"[yellow]nothing to export to {result.destination}[/yellow]")
+
+
+@app.command(name="export")
+def export_cmd():
+    """Copy out/*.html and out/today.md into MC_EXPORT_DIR (a plain local
+    folder — typically one your cloud client already syncs to your phone).
+    Runs automatically as part of `mc render --all`; this is the manual
+    re-copy. No credentials, no network, nothing read back."""
+    if export_mod.export_dir() is None:
+        console.print(
+            "[yellow]MC_EXPORT_DIR is not set in .env — export is off.[/yellow]\n"
+            "[dim]e.g. MC_EXPORT_DIR=~/Library/Mobile Documents/com~apple~CloudDocs/marathon[/dim]"
+        )
+        raise typer.Exit(1)
+    _report_export()
+
+
 @app.command(name="render")
 def render_cmd(all_: bool = typer.Option(False, "--all", help="Render every .md in out/ plus dashboard.html")):
     """Markdown -> standalone HTML."""
@@ -299,6 +330,9 @@ def render_cmd(all_: bool = typer.Option(False, "--all", help="Render every .md 
             console.print("[yellow]no plan.lock.json — skipping dashboard.html[/yellow]")
         if not paths:
             console.print("[yellow]out/ has no .md files yet[/yellow]")
+        # Export rides on --all so /daily covers it with no extra step. Silent
+        # no-op when MC_EXPORT_DIR is unset; loud when it's set but wrong.
+        _report_export()
     else:
         today_md = cfg.OUT_DIR / "today.md"
         if today_md.exists():
