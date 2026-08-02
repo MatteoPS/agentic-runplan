@@ -36,9 +36,31 @@ week still needs a done/missed confirmation** → `mc check` → write
 `out/today.md` + `.html` → append to `log/sessions/`. See
 `.claude/commands/daily.md` for the exact format.
 
-Other slash commands: `/week` (Monday review), `/travel` (unplanned trip
-reshuffle), `/italy` (the known trip block, weeks 8-9), `/push` (preview and
-push workouts to Garmin Connect — opt-in, never automatic).
+Other slash commands: `/week` (Monday review), `/plan [n]` (next n days,
+default 3), `/preview` (end of day: log today, project tomorrow), `/travel`
+(unplanned trip reshuffle), `/italy` (the known trip block, weeks 8-9),
+`/push` (preview and push workouts to Garmin Connect — opt-in, never
+automatic).
+
+## Provisional vs. committed (added 02-08-2026)
+
+The day layout for each week is decided in `/week` and **persisted** via
+`mc layout` (`data/week_layout.json`) — `plan.lock.json` freezes weekly
+totals only, so without this nothing can answer "what is Thursday?".
+
+`/daily` now also projects the next 2 days, and `/preview` projects tomorrow.
+Those projections assume normal sleep, full compliance and no new injury —
+assumptions that must be **printed, never implied**. A projection must never
+harden into a commitment: projected days are never `mc propose`d, never
+pushed (`mc push` refuses anything marked provisional), and get no
+substitution table, because whether to swap a run for the elliptical is a
+same-day judgement. `mc render` skips a stale `out/tomorrow.md` rather than
+turning yesterday's guess into a fresh-looking page.
+
+Optional: `MC_EXPORT_DIR` in `.env` makes `mc render --all` copy `out/*.html`
+and `today.md` into that local folder — typically one a cloud client already
+syncs to the phone. Plain file copy, no cloud API, write-only, nothing read
+back.
 
 ## Shin self-check & fixed strength (added 29-07-2026)
 

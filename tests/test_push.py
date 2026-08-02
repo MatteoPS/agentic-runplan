@@ -368,3 +368,36 @@ def test_pushed_json_persistence_round_trip(tmp_path, monkeypatch):
     push._save_pushed({"2026-07-29": {"workout_id": "123"}})
     assert push._load_pushed() == {"2026-07-29": {"workout_id": "123"}}
     assert pushed_path.exists()
+
+
+# --- provisional guard --------------------------------------------------------------
+
+
+TODAY_MD = """# 02-08 · Week 1/14 · w/c 27-07
+
+## Today — 8 mi easy @ HR 135-150
+Usual slot: 07:00.
+"""
+
+
+def test_push_refuses_a_provisional_projection():
+    """A projected day assumes normal sleep and no new injury — pushing one
+    turns an assumption into a committed session."""
+    md = "# 03-08 · **Provisional** — confirmed by tomorrow's /daily\n\n## Today — 5 mi easy @ HR 135-150\n"
+    with pytest.raises(push.SessionParseError, match="provisional"):
+        push.parse_session_from_today_md(md, date(2026, 8, 3))
+
+
+def test_daily_lookahead_section_does_not_block_pushing_today():
+    """/daily appends a provisional lookahead to today.md. That section is
+    legitimate — it just isn't the pushable part."""
+    md = TODAY_MD + "\n## Next 2 days (provisional)\n\n| 03-08 | 5 mi easy |\n"
+    session = push.parse_session_from_today_md(md, date(2026, 8, 2))
+    assert session.distance_mi == 8
+    assert session.session_type == "easy"
+
+
+def test_plain_today_md_still_parses():
+    session = push.parse_session_from_today_md(TODAY_MD, date(2026, 8, 2))
+    assert session.distance_mi == 8
+    assert (session.hr_low, session.hr_high) == (135, 150)

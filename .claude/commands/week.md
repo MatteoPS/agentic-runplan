@@ -25,7 +25,20 @@ Produce a review covering:
    quality-session spacing, etc.) — day-of-week isn't frozen in the lock
    file, this is where it actually gets decided for the week.
 
-   Once that layout is fixed, call
+   Once that layout is fixed, **persist it** — otherwise it exists only in
+   this conversation and nothing can answer "what is Thursday?" later in the
+   week:
+
+   `mc layout <week_num> --week-start DD-MM --set "DD-MM:mi:type,..."`
+
+   every day of the week, `type` one of `rest easy pace long cross` (omit it
+   and it's inferred: 0 mi → rest, otherwise easy). Exactly one day must be
+   `:long`. It prints the week and says whether the layout passes §6 — if it
+   reports violations, fix the layout before moving on, don't note it and
+   continue. First write per week wins; a mid-week C1 reshuffle uses
+   `--revise` and gets a reason code in `log/sessions/`.
+
+   Then call
    `mc strength <week_num> --week-start DD-MM --set-days "DD-MM:mi,DD-MM:mi,..." --long-run-day DD-MM`
    (every day of the week, mileage as planned) so the week's two fixed
    strength days get chosen deterministically — shortest non-long-run

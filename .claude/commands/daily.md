@@ -24,6 +24,12 @@ Read, in order:
   whose Actual doesn't match its Proposed)
 - The last 14 days of `log/sessions/*.md`
 
+Also run `mc plan --days 3` for this week's persisted day layout and the two
+days after today — that's what fills the "Next 2 days" section below. If it
+reports no layout for this week, `/week` hasn't run: decide the layout now per
+`/week` step 5 and persist it with `mc layout` before continuing, rather than
+projecting from a weekly average.
+
 Also run `mc strength <week_num> --week-start DD-MM` (no `--set-days`) for
 this week's fixed strength days and progression tier — this week's two days
 were chosen during `/week`. If it reports "not yet set for this week" (e.g.
@@ -109,6 +115,13 @@ optional.>
 | Day | Planned | Adjusted | Reason |
 |---|---|---|---|
 <remaining days this week, reason column uses closed codes from §6 E1 or "—">
+
+## Next 2 days (provisional)
+<from `mc plan --days 3` — its rows for tomorrow and the day after, with the
+assumptions line printed verbatim above them. See `.claude/commands/plan.md`
+for what these days may and may not do: never `mc propose`d, never pushed,
+no substitution table, and they add no questions. The heading must contain
+the word "provisional" — that's what keeps `mc push` from consuming them.>
 
 ## Watch
 - <specific things to monitor, or "nothing">

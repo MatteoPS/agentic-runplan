@@ -10,7 +10,9 @@ from mc import config as cfg
 from mc import digest as digest_mod
 from mc import equivalence as eq
 from mc import export as export_mod
+from mc import layout as layout_mod
 from mc import plan as plan_mod
+from mc import planning as planning_mod
 from mc import push as push_mod
 from mc import render as render_mod
 from mc import rules as rules_mod
@@ -203,6 +205,127 @@ def _parse_day_miles(spec: str) -> dict[str, float]:
     return day_miles
 
 
+@app.command(name="plan")
+def plan_cmd(
+    days: int = typer.Option(3, "--days", "-n", help="How many days ahead, including today (default 3)"),
+    start: str = typer.Option(None, "--start", help="DD-MM, defaults to today"),
+):
+    """The next N days: today from real data, the rest projected.
+
+    Emits the deterministic skeleton only — dates, planned miles, session
+    types, strength days, rule status. The day's judgement calls belong to
+    /daily and /preview, which have the answers this can't know.
+    """
+    start_date = _parse_ddmm(start) if start else date.today()
+    p = plan_mod.load_plan()
+    look = planning_mod.lookahead(p, start_date, days=days)
+
+    if not look.days:
+        console.print("[yellow]No plan weeks cover that range.[/yellow]")
+        raise typer.Exit(1)
+
+    table = Table(title=f"{days} days from {start_date.strftime('%d-%m')}")
+    table.add_column("Day")
+    table.add_column("Basis")
+    table.add_column("Miles", justify="right")
+    table.add_column("Session")
+    table.add_column("Notes")
+    for d_ in look.days:
+        notes = []
+        if d_.is_long_run:
+            notes.append("LONG RUN")
+        if d_.is_fixed_strength:
+            notes.append("fixed strength")
+        if not d_.layout_known:
+            notes.append("layout not set — weekly average")
+        table.add_row(
+            d_.ddmm,
+            "actual" if d_.basis is planning_mod.Basis.ACTUAL else "[yellow]projected[/yellow]",
+            f"{d_.miles:g}",
+            d_.session,
+            " · ".join(notes),
+        )
+    console.print(table)
+
+    if look.provisional_days:
+        console.print(f"[yellow]{planning_mod.format_assumptions()}[/yellow]")
+        console.print("[dim]Projected days are provisional — not pushed, not logged as proposals.[/dim]")
+    for ws in look.missing_layout_weeks:
+        console.print(f"[yellow]No layout set for w/c {ws} — run /week, or `mc layout ... --set`.[/yellow]")
+
+    if look.week_check and not look.week_check.allowed:
+        console.print("[red]This week's layout violates §6:[/red]")
+        for v in look.week_check.violations:
+            console.print(f"  [red]{v.rule_id}[/red]: {v.message}")
+
+
+@app.command(name="layout")
+def layout_cmd(
+    week_num: int = typer.Argument(..., help="Plan week number (1-14)"),
+    week_start: str = typer.Option(..., "--week-start", help="DD-MM Monday of this plan week"),
+    set_days: str = typer.Option(
+        None,
+        "--set",
+        help='Day layout: "28-07:4:easy,29-07:0:rest,02-08:11:long" (DD-MM:miles[:type]). '
+        "Type defaults to easy/rest by mileage. First write per week wins — use --revise to change a live week.",
+    ),
+    revise: bool = typer.Option(False, "--revise", help="Overwrite an existing week's layout (C1 reshuffle)"),
+    long_run_day: str = typer.Option(None, "--long-run-day", help="DD-MM; inferred when one day is typed ':long'"),
+):
+    """Show or set this week's day-of-week layout.
+
+    plan.lock.json freezes weekly totals, not day placement — that's decided
+    each Monday in /week. This is where it gets remembered, so the rest of the
+    system can answer "what is Thursday?".
+    """
+    if set_days:
+        try:
+            days, inferred = layout_mod.parse_day_spec(set_days)
+            long_day = long_run_day or inferred
+            if not long_day:
+                console.print("[red]No long run day — mark one day ':long' or pass --long-run-day.[/red]")
+                raise typer.Exit(1)
+            already_set = layout_mod.get_layout(week_start) is not None
+            fn = layout_mod.revise if revise else layout_mod.set_layout
+            wl = fn(week_start, days, long_day)
+        except layout_mod.LayoutError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1) from e
+        if already_set and not revise:
+            console.print("[yellow]Week already had a layout — returned unchanged. Use --revise to overwrite.[/yellow]")
+    else:
+        wl = layout_mod.get_layout(week_start)
+        if not wl:
+            console.print(f"[yellow]No layout set for week starting {week_start} — set one with --set.[/yellow]")
+            raise typer.Exit(1)
+
+    fixed = set(strength_mod.get_fixed_days(week_start) or [])
+    table = Table(title=f"Week {week_num} · w/c {week_start}" + (f" · revised {wl.revised}x" if wl.revised else ""))
+    table.add_column("Day")
+    table.add_column("Miles", justify="right")
+    table.add_column("Session")
+    table.add_column("Strength")
+    for d in wl.days:
+        marker = "long" if d.day == wl.long_run_day else d.session
+        table.add_row(d.day, f"{d.miles:g}", marker, "fixed" if d.day in fixed else "")
+    console.print(table)
+    console.print(f"total {wl.total_miles:g} mi · run days {wl.run_days} · long run {wl.long_run_day}")
+
+    # Say up front whether the week as laid out would pass §6, rather than
+    # letting it surface days later in a `mc check`.
+    try:
+        p = plan_mod.load_plan()
+        result = rules_mod.check_week(layout_mod.as_proposed_week(wl, week_num), p)
+    except FileNotFoundError:
+        return
+    if result.allowed:
+        console.print("[green]layout passes §6[/green]")
+    else:
+        console.print("[red]layout violates §6:[/red]")
+        for v in result.violations:
+            console.print(f"  [red]{v.rule_id}[/red]: {v.message}")
+
+
 @app.command()
 def strength(
     week_num: int = typer.Argument(..., help="Plan week number (1-14)"),
@@ -318,9 +441,14 @@ def export_cmd():
 def render_cmd(all_: bool = typer.Option(False, "--all", help="Render every .md in out/ plus dashboard.html")):
     """Markdown -> standalone HTML."""
     if all_:
-        paths = render_mod.render_all()
+        paths, skipped = render_mod.render_all()
         for p_ in paths:
             console.print(f"rendered {p_}")
+        for p_ in skipped:
+            console.print(
+                f"[yellow]skipped {p_.name} — it's a provisional projection for another day. "
+                f"Re-run /preview to refresh it.[/yellow]"
+            )
         try:
             plan = plan_mod.load_plan()
             activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
