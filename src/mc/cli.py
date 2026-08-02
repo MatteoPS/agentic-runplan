@@ -18,6 +18,7 @@ from mc import push as push_mod
 from mc import render as render_mod
 from mc import rules as rules_mod
 from mc import strength as strength_mod
+from mc import state as state_mod
 from mc import sync as sync_mod
 from mc import traininglog as tlog_mod
 
@@ -204,6 +205,48 @@ def _parse_day_miles(spec: str) -> dict[str, float]:
         d, mi = pair.split(":")
         day_miles[d.strip()] = float(mi)
     return day_miles
+
+
+@app.command(name="state")
+def state_cmd(
+    check_: bool = typer.Option(False, "--check", help="Refuse to proceed if state is stale (run before /daily)"),
+    save: str = typer.Option(None, "--save", help="Commit and push state with this message (run after /daily)"),
+):
+    """Guard and sync the private state repo.
+
+    Without flags, reports where state lives and whether it's in sync.
+    """
+    if save:
+        try:
+            done = state_mod.save(save)
+        except state_mod.StateError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1) from e
+        console.print(f"[green]state saved:[/green] {done}" if done else "[dim]nothing to save[/dim]")
+        return
+
+    try:
+        st = state_mod.check() if check_ else state_mod.status()
+    except state_mod.StateError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+
+    console.print(f"state root: {st.root}")
+    if not st.is_split:
+        console.print(
+            "[dim]Not split — state lives in the code checkout. Set MC_STATE_DIR in .env "
+            "to point at a private state repo.[/dim]"
+        )
+        return
+    if not st.is_git_repo:
+        console.print("[yellow]MC_STATE_DIR is set but isn't a git repo — nothing guards two-machine writes.[/yellow]")
+        return
+
+    console.print(f"behind {st.behind} · ahead {st.ahead} · {'clean' if st.clean else f'{len(st.dirty)} uncommitted'}")
+    if st.behind:
+        console.print(f"[red]Behind — pull before writing: git -C {st.root} pull[/red]")
+    elif st.ahead:
+        console.print("[yellow]Unpushed state — run `mc state --save \"...\"` or push manually.[/yellow]")
 
 
 @app.command()

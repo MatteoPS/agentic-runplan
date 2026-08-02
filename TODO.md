@@ -4,23 +4,23 @@ Assessed in `docs/todo-review.md`; the agreed sequence lives there.
 
 ## Next up
 
-- **Private state repo + run from the phone.** The blocker isn't Claude — it's
-  that this repo is public and every file `/daily` reads (`log/`, `data/`,
-  `.env`) is gitignored, so a cloud agent gets the code and none of the
-  history. Plan: public repo keeps code, plan and tests; a **private** repo
-  holds `log/`, `out/`, `data/` and `overrides.md`, cloned in as `state/` and
-  reached via a new `MC_STATE_DIR` (`config.py` already centralizes every
-  path, so it's four constants). Git is the sync layer, so a two-machine
-  conflict fails loudly instead of a cloud drive silently picking a winner —
-  `training-log.md`, `strength_schedule.json` and `pushed.json` are all
-  whole-file rewrites with no merge logic, and a lost key in the last one
-  creates duplicate Garmin workouts. Add `mc state --check` to refuse running
-  from a stale checkout, enforcing single-writer-per-day rather than
-  documenting it. Credentials live in neither repo: env vars in the cloud,
-  local `.env` on the Mac, and `data/.garmin_tokens/` gitignored in both since
-  it holds refresh tokens.
-  **Needs a decision first:** create the private repo. Then D1-D3 on the Mac
-  alone until boring, and only then a second writer.
+- **Run `/daily` from the phone.** The state split below is done, which was
+  the blocker — a cloud agent can now clone code (public) + history (private)
+  and have everything `/daily` reads. What's left is the environment, not this
+  codebase: a cloud Claude Code session with network egress to Garmin and
+  intervals.icu, `GARMIN_*` / `INTERVALS_*` injected as **environment
+  secrets** (never a synced file), and `MC_STATE_DIR` pointed at the private
+  clone. Then `mc state --save` at the end of a phone `/daily` and the Mac
+  picks it up on its next `--check`.
+  **Do this only once the split has been boring on the Mac for a couple of
+  weeks.** One unresolved risk: garth refreshes Garmin tokens on use, so two
+  machines refreshing independently can invalidate each other and force an
+  interactive MFA prompt a headless run can't answer. One writer per day
+  avoids it; there's no clean fix if it happens.
+- **Headless `mc sync`.** Nothing in `cli.py` passes `interactive=False`, so
+  on a machine with an expired token `mc sync` blocks on `input()` and dies
+  with `EOFError` instead of the clear `GarminAuthError` that already exists
+  for exactly this case (`garmin.py:87-92`). Small fix, needed before D4.
 
 ## Done
 
@@ -45,6 +45,13 @@ Assessed in `docs/todo-review.md`; the agreed sequence lives there.
   Surfaces the trend before the tripwire. `mc override` is the writer that
   makes the count real; an empty log reports "not tracked yet", never a
   confident zero.
+- **Private state repo** — [marathon-2026-state](https://github.com/MatteoPS/marathon-2026-state),
+  wired via `MC_STATE_DIR`. This repo stays public and code-only; personal
+  data physically cannot be committed here. Credentials in neither repo.
+  `data/raw/garmin/wellness/` *is* tracked (HRV/sleep/RHR older than 7 days
+  can't be re-fetched); the 55M of activity/intervals cache is not.
+  `mc state --check` / `--save` enforce one-writer-per-day rather than
+  documenting it, and `/daily`, `/week`, `/preview` call them.
 
 ## Not doing
 

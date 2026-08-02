@@ -10,7 +10,7 @@ run `/daily` before heading out.
 
 ## 1. Close today out
 
-1. `mc sync`, then `mc digest`. If either reports `ok: false` or
+1. `mc state --check`, then `mc sync`, then `mc digest`. If either reports `ok: false` or
    `stale_gt_36h: true`, say so in bold — never present an adaptation as
    data-driven when the data didn't arrive (§7).
 2. Ask me **one** question: what did you actually do today? (If the digest
@@ -59,7 +59,7 @@ forecast number or the reason it doesn't matter>
   shins at 2+, heat above X>
 ```
 
-Then `mc render --all`.
+Then `mc render --all`, and `mc state --save "preview DD-MM"`.
 
 ## Hard rules
 

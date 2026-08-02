@@ -1,5 +1,8 @@
-Monday review for marathon-2026. Run `mc sync` and `mc digest` first so
-everything below reflects real data, not stale cache.
+Monday review for marathon-2026. Run `mc state --check` first — if the
+private state repo is behind, pull before doing anything else, or this
+review is written against history that's missing another machine's days.
+Then `mc sync` and `mc digest`, so everything below reflects real data, not
+stale cache.
 
 Produce a review covering:
 
@@ -64,3 +67,6 @@ Produce a review covering:
 
 Units are miles and min/mile. Weeks are `Week N · w/c DD-MM`. Days are
 `DD-MM`. Terse — this is a working review, not a narrative.
+
+Finish with `mc state --save "week review w/c DD-MM"` so the layout, strength
+days and review are committed and pushed.

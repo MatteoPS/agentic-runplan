@@ -62,6 +62,28 @@ and `today.md` into that local folder — typically one a cloud client already
 syncs to the phone. Plain file copy, no cloud API, write-only, nothing read
 back.
 
+## State lives in a private repo (added 02-08-2026)
+
+This repo is **public**. `MC_STATE_DIR` points at
+`marathon-2026-state` (private), which holds `log/`, `out/`, `data/` and
+`context/overrides.md`. `plan/` and `context/equivalence.md` stay here — the
+plan is frozen and versioned, equivalence.md is sourced research. Unset,
+everything falls back to this checkout and behaves as before.
+
+Credentials are in **neither** repo. `.env` is local; so is
+`data/.garmin_tokens/`, which holds refresh tokens and is credential material
+however private the repo is.
+
+**One writer per day.** `log/training-log.md`,
+`data/strength_schedule.json` and `data/pushed.json` are rewritten whole with
+no merge logic — two machines writing the same day loses one of them
+silently, and a lost key in `pushed.json` makes the next push create a
+*duplicate* Garmin workout. Git is the sync layer precisely because it
+refuses to merge that, where a cloud drive would resolve it quietly. So:
+`mc state --check` before `/daily`, `/week`, `/preview`; `mc state --save
+"..."` after. The guard is enforced, not merely documented — if it refuses,
+pull. Never work around it.
+
 ## Shin self-check & fixed strength (added 29-07-2026)
 
 Every `/daily` asks a 0-3 shin/tibia scale, meaning restated in full each

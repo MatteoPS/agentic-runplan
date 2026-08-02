@@ -1,5 +1,14 @@
 Run the daily training ritual for marathon-2026. Follow this sequence exactly.
 
+## 0. State guard
+
+Run `mc state --check` first. If it refuses, the private state repo is behind
+its remote — another machine wrote training history you don't have. **Stop and
+pull.** Do not work around it: `training-log.md`, `strength_schedule.json` and
+`pushed.json` are rewritten whole with no merge logic, so writing from a stale
+copy deletes the other machine's day silently. (No-op when `MC_STATE_DIR`
+isn't set.)
+
 ## 1. Sync and digest
 
 Run `mc sync` (in this terminal, not backgrounded — if it needs Garmin MFA it
@@ -145,6 +154,11 @@ prescription in `log/training-log.md` via `mc propose "<today's session>"`
 automatically by tomorrow's `mc digest` step, once real data exists — that's
 how you'll know the day after whether I actually did this, did
 something else, or skipped it, without having to ask again.
+
+Finally, run `mc state --save "daily DD-MM"` to commit and push today's state.
+This is what makes the day visible to any other machine — skipping it leaves
+the next `/daily` there working from history that looks complete but isn't.
+(No-op when `MC_STATE_DIR` isn't set.)
 
 ## Reason codes (closed set, §6 E1)
 
