@@ -17,10 +17,6 @@ Assessed in `docs/todo-review.md`; the agreed sequence lives there.
   machines refreshing independently can invalidate each other and force an
   interactive MFA prompt a headless run can't answer. One writer per day
   avoids it; there's no clean fix if it happens.
-- **Headless `mc sync`.** Nothing in `cli.py` passes `interactive=False`, so
-  on a machine with an expired token `mc sync` blocks on `input()` and dies
-  with `EOFError` instead of the clear `GarminAuthError` that already exists
-  for exactly this case (`garmin.py:87-92`). Small fix, needed before D4.
 
 ## Done
 
@@ -52,6 +48,13 @@ Assessed in `docs/todo-review.md`; the agreed sequence lives there.
   can't be re-fetched); the 55M of activity/intervals cache is not.
   `mc state --check` / `--save` enforce one-writer-per-day rather than
   documenting it, and `/daily`, `/week`, `/preview` call them.
+- **Headless `mc sync`** — whether an MFA prompt is possible is now detected
+  from the terminal (`garmin.is_interactive`), so a cron job or cloud session
+  gets the clear `GarminAuthError` that already existed instead of blocking on
+  `input()` and dying with `EOFError`. No flag needed, which matters because
+  the callers that need it are the ones that won't pass one;
+  `--non-interactive` forces it. `mc sync` reports the failure as a clean
+  `ok: false` source, so `/daily` step 1 says the data didn't arrive (§7).
 
 ## Not doing
 

@@ -337,7 +337,7 @@ def _staleness_hours(most_recent_start: datetime | None) -> float | None:
 
 
 def _run_garmin(
-    since_days: int, force: bool, interactive: bool
+    since_days: int, force: bool, interactive: bool | None
 ) -> tuple[SourceReport, list[dict[str, Any]]]:
     estimate = garmin.estimate_call_count(since_days)
     print(f"[sync] Garmin call estimate: ~{estimate['total_est']} calls {estimate}", file=sys.stderr)
@@ -447,7 +447,7 @@ def run_sync(
     source: Literal["garmin", "intervals", "both"] = "both",
     *,
     force: bool = False,
-    interactive: bool = True,
+    interactive: bool | None = None,
 ) -> SyncReport:
     since_days = since_days or DEFAULT_SINCE_DAYS
     clamp_note = None

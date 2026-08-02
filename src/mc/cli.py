@@ -44,11 +44,23 @@ def _actuals_for(p: plan_mod.PlanLock, week: plan_mod.PlanWeek) -> digest_mod.We
 def sync(
     since: int = typer.Option(None, "--since", help="Days to look back (default 60)"),
     source: str = typer.Option("both", "--source", help="garmin|intervals|both"),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Fail fast instead of prompting for a Garmin MFA code. Auto-detected when there's no terminal; this forces it.",
+    ),
 ):
-    """Pull fresh data from Garmin and/or intervals.icu."""
+    """Pull fresh data from Garmin and/or intervals.icu.
+
+    Whether an MFA prompt is possible is detected from the terminal, so a
+    cron job or cloud session gets a clear error instead of blocking on
+    input() — no flag needed. --non-interactive forces that behaviour.
+    """
     if source not in ("garmin", "intervals", "both"):
         raise typer.BadParameter("source must be garmin|intervals|both")
-    report = sync_mod.run_sync(since_days=since, source=source)
+    report = sync_mod.run_sync(
+        since_days=since, source=source, interactive=False if non_interactive else None
+    )
     table = Table(title="mc sync — data health")
     for col in ("source", "ok", "staleness (h)", "activities", "error"):
         table.add_column(col)

@@ -293,7 +293,7 @@ def push_workout(
     *,
     dry_run: bool = True,
     yes: bool = False,
-    interactive: bool = True,
+    interactive: bool | None = None,
 ) -> PushResult:
     workout = build_workout(week, session_date, session, easy_pace_min_per_mi)
     payload = workout.to_dict()
@@ -345,7 +345,7 @@ def push_workout(
     )
 
 
-def unpush_workout(session_date: date, *, interactive: bool = True) -> bool:
+def unpush_workout(session_date: date, *, interactive: bool | None = None) -> bool:
     pushed = _load_pushed()
     key = session_date.isoformat()
     entry = pushed.get(key)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -80,19 +81,51 @@ _WELLNESS_JITTER_MAX_S = 0.8
 # --- auth / token cache -------------------------------------------------------
 
 
+_MFA_UNAVAILABLE_MSG = (
+    "Garmin wants an MFA code, but there's no terminal to type it into.\n"
+    "Run `uv run mc sync` once in an interactive terminal on this machine to "
+    "establish a cached token; non-interactive runs work from then on, until "
+    "the token expires or another machine's refresh invalidates it."
+)
+
+
+def is_interactive() -> bool:
+    """Whether there is a human at a terminal who could answer an MFA prompt.
+
+    Detected rather than declared, because the callers that most need the
+    non-interactive path -- a cron job, a cloud session running /daily from
+    the phone -- are exactly the ones that won't think to pass a flag. Getting
+    this wrong is not a small failure: `input()` on a closed stdin raises
+    EOFError from deep inside the login call, which surfaces as an unhandled
+    traceback rather than the perfectly good GarminAuthError that already
+    exists for this case.
+    """
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        # ValueError: stdin detached/closed. Either way, nobody's there.
+        return False
+
+
 def _prompt_mfa_interactive() -> str:
-    return input("Garmin MFA code: ").strip()
+    try:
+        return input("Garmin MFA code: ").strip()
+    except (EOFError, KeyboardInterrupt) as e:
+        # Belt and braces: isatty() can be True and still fail to read (stdin
+        # closed mid-run, a wrapper that fakes a tty, Ctrl-D at the prompt).
+        # Convert to the same clear error rather than a traceback.
+        raise GarminAuthError(_MFA_UNAVAILABLE_MSG) from e
 
 
 def _prompt_mfa_unavailable() -> str:
-    raise GarminAuthError(
-        "Garmin requires an MFA code but this run is non-interactive. "
-        "Run `uv run python -m mc.sync` in an interactive terminal first "
-        "to establish a cached token, then non-interactive runs will work."
-    )
+    raise GarminAuthError(_MFA_UNAVAILABLE_MSG)
 
 
-def get_client(interactive: bool = True) -> Garmin:
+def get_client(interactive: bool | None = None) -> Garmin:
+    """interactive=None (the default) auto-detects a terminal. Pass an
+    explicit bool only to override that."""
+    if interactive is None:
+        interactive = is_interactive()
     cfg.GARMIN_TOKENS_DIR.mkdir(parents=True, exist_ok=True)
     client = Garmin(
         email=cfg.settings.garmin_email,
@@ -341,7 +374,7 @@ def sync_garmin(
     *,
     wellness_lookback_days: int = WELLNESS_LOOKBACK_DAYS,
     force: bool = False,
-    interactive: bool = True,
+    interactive: bool | None = None,
 ) -> GarminPullResult:
     client = get_client(interactive=interactive)
 
