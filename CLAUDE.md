@@ -102,9 +102,15 @@ OVERRIDE`
 (HRV/sleep/RHR numbers), not a vibe. An `OVERRIDE` requires me to type the
 literal string `OVERRIDE: <reason>` — never assume one from any other
 phrasing, not even a close paraphrase. Overrides append to
-`context/overrides.md`. More than 2 in a 4-week block means the plan isn't
-matching real life — propose a **structural** revision for approval, not
-another override.
+`context/overrides.md` via `mc override "<reason>" --code CODE` — only ever
+after I have typed the literal string, never on a paraphrase. More than 2 in
+a 4-week block means the plan isn't matching real life — propose a
+**structural** revision for approval, not another override.
+
+`mc drift` reports the trailing 4 weeks in plain sentences: miles short,
+which days deviated, which codes recur, overrides against the limit of 2. It
+exists to surface that trend *before* the tripwire. It reports counts and
+dates only — never a diagnosis (§6 D6), never a plan change.
 
 ## §6 — THE RULE ENGINE (verbatim)
 

@@ -152,3 +152,13 @@ something else, or skipped it, without having to ask again.
 
 "I feel tired" is not a reason code. `READINESS` requires citing actual data
 (HRV, sleep, RHR numbers), not a vibe.
+
+If I type a literal `OVERRIDE: <reason>`, record it with
+`mc override "<reason>" --code <CODE>`. Never run that command on a
+paraphrase, however close — E4 means the literal string, and this command is
+the writer for that moment, not the judge of it. It warns when the count
+passes E5's limit of 2 in a 4-week block; if it does, propose a **structural**
+revision for approval, not another override.
+
+Run `mc drift` when the rolling picture is in question (E2/E5) — it states the
+shortfall in miles and which reason codes keep recurring, in plain sentences.

@@ -8,6 +8,7 @@ from rich.table import Table
 
 from mc import config as cfg
 from mc import digest as digest_mod
+from mc import drift as drift_mod
 from mc import equivalence as eq
 from mc import export as export_mod
 from mc import layout as layout_mod
@@ -203,6 +204,51 @@ def _parse_day_miles(spec: str) -> dict[str, float]:
         d, mi = pair.split(":")
         day_miles[d.strip()] = float(mi)
     return day_miles
+
+
+@app.command()
+def drift(weeks: int = typer.Option(4, "--weeks", help="Trailing window, default 4 (one block)")):
+    """Is the plan still matching real life? Counts and dates, in sentences.
+
+    Surfaces the trend *before* the override count forces the question (§6
+    E5). Reports facts only — it never diagnoses a symptom and never proposes
+    a plan change; that's the agent's job, with §6 in hand.
+    """
+    report = drift_mod.build_report(weeks=weeks)
+    for line in drift_mod.format_report(report):
+        if line.startswith("["):
+            console.print(f"[dim]{line}[/dim]")
+        elif "over the limit" in line or "short." in line:
+            console.print(f"[red]{line}[/red]")
+        else:
+            console.print(line)
+
+
+@app.command()
+def override(
+    reason: str = typer.Argument(..., help="Why — cited, specific. Not 'I feel tired'."),
+    code: str = typer.Option(..., "--code", help=f"One of: {' '.join(drift_mod.REASON_CODES)}"),
+    day: str = typer.Option(None, "--date", help="DD-MM, defaults to today"),
+):
+    """Append an override to context/overrides.md (§6 E4).
+
+    Only ever run this after I have typed a literal `OVERRIDE: <reason>` —
+    never inferred from a paraphrase, however close.
+    """
+    try:
+        entry = drift_mod.append_override(code, reason, day=_parse_ddmm(day) if day else None)
+    except drift_mod.OverrideError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+    console.print(f"[green]recorded:[/green]{entry}")
+
+    report = drift_mod.build_report()
+    if report.overrides and len(report.overrides) > drift_mod.OVERRIDE_LIMIT_PER_BLOCK:
+        console.print(
+            f"[red]That's {len(report.overrides)} overrides in the last 4 weeks, over the limit of "
+            f"{drift_mod.OVERRIDE_LIMIT_PER_BLOCK}. §6 E5: propose a structural revision, not another "
+            f"override.[/red]"
+        )
 
 
 @app.command(name="plan")

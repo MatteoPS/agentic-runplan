@@ -12,6 +12,14 @@ Produce a review covering:
    block compliance floor. If it's below floor, that's an E2 trigger — say
    so plainly, don't bury it.
 
+   Run `mc drift` too. It reports the trailing 4 weeks in plain language:
+   shortfall in miles, which days deviated, which reason codes keep
+   recurring, and the override count against E5's limit of 2. Quote its first
+   line verbatim if it reports a shortfall. Treat recurring codes as a signal
+   about the *plan*, not about me — three SHIN days in four weeks is a plan
+   that needs revising, whether or not anyone typed OVERRIDE. It reports
+   counts, never a diagnosis; don't turn its numbers into one (§6 D6).
+
 3. **Long-run ratio trend.** Last 3-4 weeks' actual long-run ratio against
    each week's `long_run_ratio_max` from `plan.lock.json` — is it trending
    toward or away from the cap?
