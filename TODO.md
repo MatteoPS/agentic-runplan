@@ -2,30 +2,25 @@
 
 Assessed in `docs/todo-review.md`; the agreed sequence lives there.
 
-## In flight
+## Next up
 
-- **`/plan [n]` (default 3) and `/preview`.** `/daily` produces today plus the
-  next 2 days. Day 1 uses real data (sleep, HRV, RHR, yesterday's actual);
-  days 2-3 are projections assuming normal sleep, full compliance and no new
-  injury, and say so. `/preview` runs at the end of the day: logs what was
-  actually done, then previews tomorrow under the same assumptions — enough to
-  decide early alarm + outdoor vs. elliptical with AC. Provisional output is
-  never pushed and never written to `log/training-log.md`.
-- **Persist the week's day layout** (`data/week_layout.json`). Prerequisite for
-  the above: day-of-week is currently decided in `/week` and discarded, so
-  nothing can answer "what is Thursday?". Also unblocks multi-day `mc push`,
-  which `push.md` advertises but which can't work today.
-- **`mc drift`.** Plain-language 4-week summary: which reason codes keep
-  appearing, planned vs. actual miles, override count against the E5 limit of
-  2. The point is to surface "the plan isn't matching my life" *before* the
-  tripwire. Needs a format and a writer for `context/overrides.md` first — it
-  currently has no entries and no code path.
-- **Private state repo + run from the phone.** Public repo keeps code, plan and
-  tests; a private repo holds `log/`, `out/`, `data/` and `overrides.md`,
-  cloned in as `state/` and reached via `MC_STATE_DIR`. Git is the sync layer,
-  so a two-machine conflict fails loudly instead of a cloud drive silently
-  picking a winner. Credentials live in neither repo — env vars in the cloud,
-  local `.env` on the Mac. Only worth starting once the rest is boring.
+- **Private state repo + run from the phone.** The blocker isn't Claude — it's
+  that this repo is public and every file `/daily` reads (`log/`, `data/`,
+  `.env`) is gitignored, so a cloud agent gets the code and none of the
+  history. Plan: public repo keeps code, plan and tests; a **private** repo
+  holds `log/`, `out/`, `data/` and `overrides.md`, cloned in as `state/` and
+  reached via a new `MC_STATE_DIR` (`config.py` already centralizes every
+  path, so it's four constants). Git is the sync layer, so a two-machine
+  conflict fails loudly instead of a cloud drive silently picking a winner —
+  `training-log.md`, `strength_schedule.json` and `pushed.json` are all
+  whole-file rewrites with no merge logic, and a lost key in the last one
+  creates duplicate Garmin workouts. Add `mc state --check` to refuse running
+  from a stale checkout, enforcing single-writer-per-day rather than
+  documenting it. Credentials live in neither repo: env vars in the cloud,
+  local `.env` on the Mac, and `data/.garmin_tokens/` gitignored in both since
+  it holds refresh tokens.
+  **Needs a decision first:** create the private repo. Then D1-D3 on the Mac
+  alone until boring, and only then a second writer.
 
 ## Done
 
@@ -36,6 +31,20 @@ Assessed in `docs/todo-review.md`; the agreed sequence lives there.
   `today.md` into `MC_EXPORT_DIR`, a plain local folder. Whatever cloud client
   owns that folder does the syncing; no cloud API, no credentials, write-only,
   off unless the env var is set.
+- **Persist the week's day layout** — `mc layout` / `data/week_layout.json`.
+  `/week` decided the layout and threw it away; now it's remembered, so the
+  system can answer "what is Thursday?". Rewritable mid-week under C1 while
+  the fixed strength days stay put. Also unblocks multi-day `mc push`.
+- **`/plan [n]` (default 3) and `/preview`** — `/daily` now also projects the
+  next 2 days; `/preview` closes today out and previews tomorrow, answering
+  "early alarm and outside, or elliptical with AC any time?". Projections
+  state their assumptions, and can't harden into commitments: never proposed,
+  never pushed, and `mc render` skips a stale `out/tomorrow.md`.
+- **`mc drift`** — trailing 4 weeks in plain sentences: miles short, which
+  days deviated, which reason codes recur, overrides against E5's limit of 2.
+  Surfaces the trend before the tripwire. `mc override` is the writer that
+  makes the count real; an empty log reports "not tracked yet", never a
+  confident zero.
 
 ## Not doing
 
