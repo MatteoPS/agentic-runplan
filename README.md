@@ -18,17 +18,21 @@ The mechanism is NOT marathon or running-specific. Swap in a different plan and 
 - **Data** — Garmin Connect + intervals.icu, cross-checked against each
   other, feeding real numbers into every decision.
 - **Agent** — [Claude Code](https://claude.com/product/claude-code) slash
-  commands (`/daily`, `/week`, `/travel`) run it day-to-day, governed by
-  `CLAUDE.md`.
+  commands (`/daily`, `/plan`, `/preview`, `/week`, `/travel`) run it
+  day-to-day, governed by `CLAUDE.md`.
 
 Every proposed change is checked against the rule engine before it's shown;
 every deviation gets a reason code from a closed set, logged — so
 "I felt tired" never quietly becomes the new plan.
 
 See `examples/` for fabricated sample output (what `/daily` actually
-produces) without any of my real training or health data — real output and
-logs are gitignored (`out/`, `log/`, `data/`) since they'd otherwise contain
-that data once run against a real account.
+produces) without any of my real training or health data.
+
+**Personal data never lives in this repo.** `out/`, `log/` and `data/` are
+gitignored here, and in my own setup `MC_STATE_DIR` points them at a separate
+*private* repo entirely — so the split is structural rather than a matter of
+remembering. Unset, everything falls back to this checkout and behaves as a
+normal single-repo project. See [Private state](#private-state-optional).
 
 ## What it actually does
 
@@ -95,7 +99,48 @@ uv run mc sync
 
 After that, a session token is cached under `data/.garmin_tokens/`
 (gitignored) and you won't need to enter an MFA code again unless the cache
-is invalidated.
+is invalidated. Every later run detects whether there's a terminal to prompt
+in, so a cron job or a cloud session gets a clear error instead of hanging on
+a prompt nobody can answer.
+
+### Private state (optional)
+
+```
+MC_STATE_DIR=~/marathon-2026-state
+```
+
+Points `log/`, `out/`, `data/` and `context/overrides.md` at a separate
+**private** repo, so this one can stay public and code-only. Unset, all of it
+lives in this checkout and nothing changes — you don't need this to use the
+system.
+
+You keep working in *this* directory as normal; only the state files are
+written elsewhere. Credentials stay out of both repos: `.env` is local, and
+`data/.garmin_tokens/` holds refresh tokens, so it's gitignored in the state
+repo too.
+
+If you use it from more than one machine, **one writer per day**.
+`log/training-log.md`, `data/strength_schedule.json` and `data/pushed.json`
+are rewritten whole with no merge logic, so writing from a stale checkout
+drops the other machine's day silently — and a lost key in `pushed.json`
+makes the next push create a *duplicate* Garmin workout. `mc state --check`
+enforces this rather than trusting you to remember; `/daily`, `/week` and
+`/preview` call it before writing and `mc state --save` after.
+
+Git is the sync layer on purpose: it refuses to merge that conflict, where a
+cloud drive would resolve it quietly. A side benefit is that `out/today.md`
+becomes readable from the GitHub mobile app with no further setup.
+
+### Getting the daily output onto a phone (optional)
+
+```
+MC_EXPORT_DIR=~/Library/Mobile Documents/com~apple~CloudDocs/marathon
+```
+
+Makes `mc render --all` copy `out/*.html` and `today.md` into that local
+folder. If it happens to sit inside a folder your cloud client already syncs,
+that client carries it to your phone — `mc` makes no network call and holds no
+cloud credentials. Unset, the feature is off.
 
 ## Normal use — a typical day
 
@@ -122,6 +167,10 @@ uv run mc check               # run the rule engine against the current week
 uv run mc equiv "8 mi easy"   # what would elliptical/bike get me instead?
 ```
 
+Then `/plan 3` shows today plus the next two days (projected, and labelled as
+such), and `/preview` at the end of the day logs what you actually did and
+previews tomorrow — enough to decide whether to set an early alarm.
+
 Other slash commands: `/week` (Monday review — compliance trend, next week's
 layout), `/travel` (an unplanned trip — reshuffles affected weeks under the
 travel rules), `/italy` (my known trip block specifically — a template for
@@ -147,21 +196,32 @@ Everything runs as `uv run mc <command>`.
 | `mc propose "<text>" [--date DD-MM]`                       | Record today's proposed session into`log/training-log.md`. Its Actual column fills in automatically by the next day's `mc digest`, once real data exists — a running proposed-vs-actual table, so a missed or swapped session is never lost track of.                                                                                                                                     |
 | `mc push --date DD-MM [--option NAME] [--dry-run] [--yes]` | Preview or push a workout to Garmin —`run`, `elliptical`, or `bike`, each as its own real Garmin workout type. `--option` picks a specific substitution-table alternative (e.g. `--option bike`) instead of the primary Today prescription. `--dry-run` prints the JSON payload with no network call; a real push needs `--yes` and will refuse outright if it violates a rule. |
 | `mc unpush --date DD-MM`                                   | Remove a previously pushed workout.                                                                                                                                                                                                                                                                                                                                                            |
+| `mc layout N --week-start DD-MM [--set "DD-MM:mi[:type]"]` | Show or set the week's day-of-week layout. `plan.lock.json` freezes weekly totals; day placement is decided each Monday and persisted here, so the rest of the system can answer "what is Thursday?". `--revise` overwrites a live week. Prints whether the layout passes §6. |
+| `mc plan [--days N]`                                       | The next N days (default 3). Day 1 from real data; days 2+ projected under stated assumptions, and marked as such. |
+| `mc drift [--weeks N]`                                     | Plain-language summary of the trailing 4 weeks: miles short, which days deviated, which reason codes recur, overrides against the limit of 2. Counts and dates only — never a diagnosis. |
+| `mc override "<reason>" --code CODE`                       | Append a §6 E4 override to `context/overrides.md`. Only ever run after the literal `OVERRIDE:` string is typed — never inferred. |
+| `mc export`                                                | Copy `out/*.html` and `today.md` into `MC_EXPORT_DIR`. Runs automatically at the end of `mc render --all`; this is the manual re-copy. |
+| `mc state [--check \| --save "msg"]`                       | Guard and sync the private state repo. `--check` refuses to proceed from a checkout that's behind; `--save` commits and pushes. No-op unless `MC_STATE_DIR` is set. |
 
 ## Project layout
 
 ```
-src/mc/          the actual system: sync, digest, plan, rules, equivalence, render, cli, push, strength
+src/mc/          the actual system: sync, digest, plan, planning, rules, layout, equivalence,
+                 render, export, drift, state, cli, push, strength
 plan/            plan-source.md (verbatim Higdon), plan.md (compressed + reasoning),
                  plan.lock.json (frozen, immutable — see CLAUDE.md for how it's protected)
 context/         equivalence.md (sourced cross-training research), overrides.md, athlete context
-log/             training-log.md, and a dated file per day under sessions/ — gitignored, real data
-data/            raw API caches and sync state — gitignored, regenerated by mc sync, real data
-out/             today.md/.html, dashboard.html — gitignored, regenerated, real data
+log/             training-log.md, and a dated file per day under sessions/ — real data
+data/            raw API caches, week layout, strength + push state — real data
+out/             today.md/.html, dashboard.html — real data
+                 ^ all three are gitignored here, and relocate wholesale to the private
+                   state repo when MC_STATE_DIR is set
 examples/        fabricated sample output/logs/data showing the shape of the above without real data
-.claude/commands/ the slash commands (daily, week, travel, italy, push)
-tests/           pytest — 209 tests covering the rule engine, sync reconciliation, the equivalence
-                 engine, digest generation, strength progression, and push.py, run against synthetic
+.claude/commands/ the slash commands (daily, plan, preview, week, travel, italy, push)
+docs/            devlog.md (why the system changed, newest first), todo-review.md
+tests/           pytest — 303 tests covering the rule engine, sync reconciliation, the equivalence
+                 engine, digest generation, strength progression, and push.py, the week layout, drift and
+                 the headless-auth path, run against synthetic
                  fixtures and, where it matters (like the travel-block dates), the real frozen plan
 ```
 
@@ -176,7 +236,7 @@ documentation.
 uv run pytest
 ```
 
-209 tests, no network calls — everything is checked against either a
+303 tests, no network calls — everything is checked against either a
 synthetic plan fixture built to exercise every block type, or the real
 frozen `plan.lock.json` where the test genuinely needs real dates (the
 travel-block arrival/return windows) or wants to confirm the actual frozen

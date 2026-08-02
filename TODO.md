@@ -23,10 +23,16 @@ Assessed in `docs/todo-review.md`; the agreed sequence lives there.
 - **Edit pushed activities** — a constant HR target now emits one workout step
   instead of warmup/interval/cooldown all at the same HR. The 3-step path
   remains for when warmup gets a target of its own (`push._build_steps`).
-- **Auto-send `out/` to phone** — `mc render --all` copies `out/*.html` and
-  `today.md` into `MC_EXPORT_DIR`, a plain local folder. Whatever cloud client
-  owns that folder does the syncing; no cloud API, no credentials, write-only,
-  off unless the env var is set.
+- **Get `out/` onto the phone** — solved twice over, pick either:
+  1. **GitHub mobile app** (zero setup). `out/` is in the private state repo,
+     so `out/today.md` is readable from the app the moment `mc state --save`
+     runs. Markdown renders natively there; the `.html` twins show as source,
+     so read the `.md` on the phone.
+  2. **`MC_EXPORT_DIR`** — `mc render --all` copies `out/*.html` and
+     `today.md` into a plain local folder. Whatever cloud client owns that
+     folder syncs it. No cloud API, no credentials, write-only, off unless
+     the env var is set. Worth it only if you want the *rendered* HTML or
+     offline access; otherwise the GitHub app is simpler and already works.
 - **Persist the week's day layout** — `mc layout` / `data/week_layout.json`.
   `/week` decided the layout and threw it away; now it's remembered, so the
   system can answer "what is Thursday?". Rewritable mid-week under C1 while
