@@ -36,9 +36,53 @@ week still needs a done/missed confirmation** → `mc check` → write
 `out/today.md` + `.html` → append to `log/sessions/`. See
 `.claude/commands/daily.md` for the exact format.
 
-Other slash commands: `/week` (Monday review), `/travel` (unplanned trip
-reshuffle), `/italy` (the known trip block, weeks 8-9), `/push` (preview and
-push workouts to Garmin Connect — opt-in, never automatic).
+Other slash commands: `/week` (Monday review), `/plan [n]` (next n days,
+default 3), `/preview` (end of day: log today, project tomorrow), `/travel`
+(unplanned trip reshuffle), `/italy` (the known trip block, weeks 8-9),
+`/push` (preview and push workouts to Garmin Connect — opt-in, never
+automatic).
+
+## Provisional vs. committed (added 02-08-2026)
+
+The day layout for each week is decided in `/week` and **persisted** via
+`mc layout` (`data/week_layout.json`) — `plan.lock.json` freezes weekly
+totals only, so without this nothing can answer "what is Thursday?".
+
+`/daily` now also projects the next 2 days, and `/preview` projects tomorrow.
+Those projections assume normal sleep, full compliance and no new injury —
+assumptions that must be **printed, never implied**. A projection must never
+harden into a commitment: projected days are never `mc propose`d, never
+pushed (`mc push` refuses anything marked provisional), and get no
+substitution table, because whether to swap a run for the elliptical is a
+same-day judgement. `mc render` skips a stale `out/tomorrow.md` rather than
+turning yesterday's guess into a fresh-looking page.
+
+Optional: `MC_EXPORT_DIR` in `.env` makes `mc render --all` copy `out/*.html`
+and `today.md` into that local folder — typically one a cloud client already
+syncs to the phone. Plain file copy, no cloud API, write-only, nothing read
+back.
+
+## State lives in a private repo (added 02-08-2026)
+
+This repo is **public**. `MC_STATE_DIR` points at
+`marathon-2026-state` (private), which holds `log/`, `out/`, `data/` and
+`context/overrides.md`. `plan/` and `context/equivalence.md` stay here — the
+plan is frozen and versioned, equivalence.md is sourced research. Unset,
+everything falls back to this checkout and behaves as before.
+
+Credentials are in **neither** repo. `.env` is local; so is
+`data/.garmin_tokens/`, which holds refresh tokens and is credential material
+however private the repo is.
+
+**One writer per day.** `log/training-log.md`,
+`data/strength_schedule.json` and `data/pushed.json` are rewritten whole with
+no merge logic — two machines writing the same day loses one of them
+silently, and a lost key in `pushed.json` makes the next push create a
+*duplicate* Garmin workout. Git is the sync layer precisely because it
+refuses to merge that, where a cloud drive would resolve it quietly. So:
+`mc state --check` before `/daily`, `/week`, `/preview`; `mc state --save
+"..."` after. The guard is enforced, not merely documented — if it refuses,
+pull. Never work around it.
 
 ## Shin self-check & fixed strength (added 29-07-2026)
 
@@ -80,9 +124,15 @@ OVERRIDE`
 (HRV/sleep/RHR numbers), not a vibe. An `OVERRIDE` requires me to type the
 literal string `OVERRIDE: <reason>` — never assume one from any other
 phrasing, not even a close paraphrase. Overrides append to
-`context/overrides.md`. More than 2 in a 4-week block means the plan isn't
-matching real life — propose a **structural** revision for approval, not
-another override.
+`context/overrides.md` via `mc override "<reason>" --code CODE` — only ever
+after I have typed the literal string, never on a paraphrase. More than 2 in
+a 4-week block means the plan isn't matching real life — propose a
+**structural** revision for approval, not another override.
+
+`mc drift` reports the trailing 4 weeks in plain sentences: miles short,
+which days deviated, which codes recur, overrides against the limit of 2. It
+exists to surface that trend *before* the tripwire. It reports counts and
+dates only — never a diagnosis (§6 D6), never a plan change.
 
 ## §6 — THE RULE ENGINE (verbatim)
 

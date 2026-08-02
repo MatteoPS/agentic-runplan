@@ -9,7 +9,26 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
-DATA_DIR = PROJECT_ROOT / "data"
+# Where personal state lives. Defaults to PROJECT_ROOT, so an existing
+# checkout behaves exactly as before until MC_STATE_DIR is set.
+#
+# The split exists because this repo is public and everything /daily reads --
+# log/, data/, out/ -- is real training and health data, gitignored for that
+# reason. Pointing STATE_ROOT at a separate *private* repo makes the leak
+# structurally impossible rather than carefully avoided, and gives a second
+# machine somewhere to sync from. Git is the sync layer on purpose: three of
+# these state files are whole-file rewrites with no merge logic
+# (log/training-log.md, data/strength_schedule.json, data/pushed.json), and a
+# cloud drive would resolve that class of conflict silently while git refuses
+# and makes you look. See TODO.md.
+#
+# What deliberately does NOT move: plan/ (frozen, versioned, part of the
+# public showcase) and context/equivalence.md (research notes, no personal
+# data). context/overrides.md does move -- it accumulates the reasons real
+# life diverged from the plan.
+STATE_ROOT = Path(os.environ.get("MC_STATE_DIR") or PROJECT_ROOT).expanduser()
+
+DATA_DIR = STATE_ROOT / "data"
 RAW_GARMIN_DIR = DATA_DIR / "raw" / "garmin"
 RAW_INTERVALS_DIR = DATA_DIR / "raw" / "intervals"
 GARMIN_TOKENS_DIR = DATA_DIR / ".garmin_tokens"
@@ -21,14 +40,19 @@ PLAN_DIR = PROJECT_ROOT / "plan"
 PLAN_LOCK_PATH = PLAN_DIR / "plan.lock.json"
 PLAN_MD_PATH = PLAN_DIR / "plan.md"
 
-CONTEXT_DIR = PROJECT_ROOT / "context"
-OVERRIDES_LOG_PATH = CONTEXT_DIR / "overrides.md"
+CONTEXT_DIR = PROJECT_ROOT / "context"  # equivalence.md — research notes, stays public
+OVERRIDES_LOG_PATH = STATE_ROOT / "context" / "overrides.md"
 
-LOG_DIR = PROJECT_ROOT / "log"
+LOG_DIR = STATE_ROOT / "log"
 LOG_SESSIONS_DIR = LOG_DIR / "sessions"
 TRAINING_LOG_PATH = LOG_DIR / "training-log.md"
 
-OUT_DIR = PROJECT_ROOT / "out"
+OUT_DIR = STATE_ROOT / "out"
+
+
+def state_is_split() -> bool:
+    """True once MC_STATE_DIR points somewhere other than the code checkout."""
+    return STATE_ROOT != PROJECT_ROOT
 
 
 class ConfigError(Exception):

@@ -137,20 +137,45 @@ class SessionSpec:
     pace_min_per_mi: float | None = None  # informational only, run modality only — never a hard target on the long run
 
 
+def _build_steps(
+    duration_s: float,
+    warmup_target: dict[str, Any] | None,
+    main_target: dict[str, Any] | None,
+    cooldown_target: dict[str, Any] | None,
+) -> list[ExecutableStep]:
+    """A warmup/cooldown split only tells the watch something when its target
+    actually differs from the main set's. Today every session is a single
+    constant HR band, so the three phases were identical -- three alerts, one
+    instruction, and a mid-run "cooldown" banner for a run that was all one
+    effort. Collapse to one step whenever the targets match.
+
+    The split path below is deliberately kept rather than deleted: it returns
+    the day warmup gets a real target of its own (an easier HR band, or a
+    slower pace zone on pace days). This is not an oversight -- it is the
+    condition under which the split is meaningful.
+    """
+    if warmup_target == main_target == cooldown_target:
+        return [_step(1, StepType.INTERVAL, "interval", duration_s, main_target)]
+
+    main_s = max(MIN_MAIN_SECONDS, duration_s - WARMUP_SECONDS - COOLDOWN_SECONDS)
+    return [
+        _step(1, StepType.WARMUP, "warmup", WARMUP_SECONDS, warmup_target),
+        _step(2, StepType.INTERVAL, "interval", main_s, main_target),
+        _step(3, StepType.COOLDOWN, "cooldown", COOLDOWN_SECONDS, cooldown_target),
+    ]
+
+
 def build_workout(week: PlanWeek, session_date: date, session: SessionSpec, easy_pace_min_per_mi: float) -> BaseWorkout:
     if session.duration_min is not None:
         duration_min = session.duration_min
     else:
         duration_min = session.distance_mi * (session.pace_min_per_mi or easy_pace_min_per_mi)
     duration_s = duration_min * 60
-    main_s = max(MIN_MAIN_SECONDS, duration_s - WARMUP_SECONDS - COOLDOWN_SECONDS)
 
+    # Same target for all three phases -- including pace sessions, which today
+    # carry no distinct warmup target either. See _build_steps.
     target = _hr_zone_target(session.hr_low, session.hr_high)
-    steps = [
-        _step(1, StepType.WARMUP, "warmup", WARMUP_SECONDS, target),
-        _step(2, StepType.INTERVAL, "interval", main_s, target),
-        _step(3, StepType.COOLDOWN, "cooldown", COOLDOWN_SECONDS, target),
-    ]
+    steps = _build_steps(duration_s, target, target, target)
 
     description = f"HR {session.hr_low}-{session.hr_high}"
     if session.pace_min_per_mi:
@@ -268,7 +293,7 @@ def push_workout(
     *,
     dry_run: bool = True,
     yes: bool = False,
-    interactive: bool = True,
+    interactive: bool | None = None,
 ) -> PushResult:
     workout = build_workout(week, session_date, session, easy_pace_min_per_mi)
     payload = workout.to_dict()
@@ -320,7 +345,7 @@ def push_workout(
     )
 
 
-def unpush_workout(session_date: date, *, interactive: bool = True) -> bool:
+def unpush_workout(session_date: date, *, interactive: bool | None = None) -> bool:
     pushed = _load_pushed()
     key = session_date.isoformat()
     entry = pushed.get(key)
@@ -416,7 +441,39 @@ def _build_session_spec_from_text(text: str, easy_pace_min_per_mi: float) -> Ses
     )
 
 
+# /preview and /plan mark projected days PROVISIONAL. Those are computed
+# under assumed conditions -- normal sleep, no new injury, full compliance --
+# none of which have happened yet. Pushing one to the watch would turn an
+# assumption into a committed session that tomorrow's digest then measures
+# real life against, which is exactly the silent hardening the projection
+# design exists to prevent. Refuse rather than trust the caller to notice.
+#
+# Scoping matters here: /daily appends a "## Next 2 days (provisional)"
+# lookahead to out/today.md, and that section is entirely legitimate -- it
+# just isn't pushable. So the lookahead section is cut before scanning, and
+# only what remains (the day's actual prescription) is checked. A file that
+# is provisional *as a whole* -- out/tomorrow.md, which says so above its
+# lookahead heading -- still trips the guard.
+_PROVISIONAL_RE = re.compile(r"\bprovisional\b", re.IGNORECASE)
+_LOOKAHEAD_HEADING_RE = re.compile(r"^##\s+.*\bprovisional\b.*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _prescription_region(md_text: str) -> str:
+    """Everything before the provisional-lookahead section."""
+    match = _LOOKAHEAD_HEADING_RE.search(md_text)
+    return md_text[: match.start()] if match else md_text
+
+
+def _check_not_provisional(md_text: str) -> None:
+    if _PROVISIONAL_RE.search(_prescription_region(md_text)):
+        raise SessionParseError(
+            "This session is marked provisional — it's a projection under assumed "
+            "conditions, not today's prescription. Run /daily for the real day first."
+        )
+
+
 def _check_today_md_date(md_text: str, expected_date: date) -> None:
+    _check_not_provisional(md_text)
     header_match = _HEADER_DATE_RE.search(md_text)
     if not header_match:
         raise SessionParseError("out/today.md has no '# DD-MM · ...' header — can't confirm which day this is for.")

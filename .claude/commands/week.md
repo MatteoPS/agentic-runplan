@@ -1,5 +1,8 @@
-Monday review for marathon-2026. Run `mc sync` and `mc digest` first so
-everything below reflects real data, not stale cache.
+Monday review for marathon-2026. Run `mc state --check` first — if the
+private state repo is behind, pull before doing anything else, or this
+review is written against history that's missing another machine's days.
+Then `mc sync` and `mc digest`, so everything below reflects real data, not
+stale cache.
 
 Produce a review covering:
 
@@ -11,6 +14,14 @@ Produce a review covering:
 2. **Rolling compliance.** Compute rolling 3-week actual vs. each week's
    block compliance floor. If it's below floor, that's an E2 trigger — say
    so plainly, don't bury it.
+
+   Run `mc drift` too. It reports the trailing 4 weeks in plain language:
+   shortfall in miles, which days deviated, which reason codes keep
+   recurring, and the override count against E5's limit of 2. Quote its first
+   line verbatim if it reports a shortfall. Treat recurring codes as a signal
+   about the *plan*, not about me — three SHIN days in four weeks is a plan
+   that needs revising, whether or not anyone typed OVERRIDE. It reports
+   counts, never a diagnosis; don't turn its numbers into one (§6 D6).
 
 3. **Long-run ratio trend.** Last 3-4 weeks' actual long-run ratio against
    each week's `long_run_ratio_max` from `plan.lock.json` — is it trending
@@ -25,7 +36,20 @@ Produce a review covering:
    quality-session spacing, etc.) — day-of-week isn't frozen in the lock
    file, this is where it actually gets decided for the week.
 
-   Once that layout is fixed, call
+   Once that layout is fixed, **persist it** — otherwise it exists only in
+   this conversation and nothing can answer "what is Thursday?" later in the
+   week:
+
+   `mc layout <week_num> --week-start DD-MM --set "DD-MM:mi:type,..."`
+
+   every day of the week, `type` one of `rest easy pace long cross` (omit it
+   and it's inferred: 0 mi → rest, otherwise easy). Exactly one day must be
+   `:long`. It prints the week and says whether the layout passes §6 — if it
+   reports violations, fix the layout before moving on, don't note it and
+   continue. First write per week wins; a mid-week C1 reshuffle uses
+   `--revise` and gets a reason code in `log/sessions/`.
+
+   Then call
    `mc strength <week_num> --week-start DD-MM --set-days "DD-MM:mi,DD-MM:mi,..." --long-run-day DD-MM`
    (every day of the week, mileage as planned) so the week's two fixed
    strength days get chosen deterministically — shortest non-long-run
@@ -43,3 +67,6 @@ Produce a review covering:
 
 Units are miles and min/mile. Weeks are `Week N · w/c DD-MM`. Days are
 `DD-MM`. Terse — this is a working review, not a narrative.
+
+Finish with `mc state --save "week review w/c DD-MM"` so the layout, strength
+days and review are committed and pushed.

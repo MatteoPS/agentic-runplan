@@ -15,6 +15,13 @@ For each day in range:
    (e.g. pushing tomorrow before /daily has run for tomorrow), say so plainly
    rather than guessing at what the session should be. `mc push` itself will
    refuse with a clear message if the dates don't match.
+
+   **Never push a provisional projection.** `out/tomorrow.md` from `/preview`,
+   and the "Next 2 days (provisional)" section of `out/today.md`, are computed
+   under assumed conditions — normal sleep, no new injury, full compliance —
+   none of which have happened. `mc push` refuses anything marked provisional;
+   that refusal is the safety mechanism, not an obstacle to route around. If I
+   ask you to push tomorrow, the answer is "run /daily tomorrow morning first."
 2. Run `mc push --date DD-MM --dry-run [--option <name>]` and show the
    **full text preview** (workout name `MC W{week} {DD-MM} {type}`, HR
    targets, and for long runs the pace ceiling note — never a hard pace

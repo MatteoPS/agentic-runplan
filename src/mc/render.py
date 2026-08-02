@@ -154,10 +154,44 @@ def render_file(md_path: Path) -> Path:
     return html_path
 
 
-def render_all(out_dir: Path = cfg.OUT_DIR) -> list[Path]:
+# out/tomorrow.md is a *provisional* projection written by /preview the
+# evening before. It goes stale the moment its target date passes, and a
+# stale one is worse than none: render_all would happily turn yesterday's
+# guess into a fresh-looking HTML page indistinguishable from a real plan.
+# Same precedent as push._check_today_md_date -- the file states which day it
+# is for, and we believe the file rather than its filename.
+PROVISIONAL_FILES = {"tomorrow.md"}
+_HEADER_DATE_RE = re.compile(r"^#\s*(\d{2}-\d{2})", re.MULTILINE)
+
+
+def target_date_of(md_path: Path) -> str | None:
+    """The DD-MM in the file's own `# DD-MM · ...` header, if any."""
+    match = _HEADER_DATE_RE.search(md_path.read_text())
+    return match.group(1) if match else None
+
+
+def is_stale(md_path: Path, as_of: date | None = None) -> bool:
+    """True when a provisional file's own header date is in the past."""
+    if md_path.name not in PROVISIONAL_FILES:
+        return False
+    header = target_date_of(md_path)
+    if header is None:
+        return True  # a provisional file that won't say which day it's for is not trustworthy
+    as_of = as_of or date.today()
+    return header != as_of.strftime("%d-%m") and header != (as_of + timedelta(days=1)).strftime("%d-%m")
+
+
+def render_all(out_dir: Path = cfg.OUT_DIR, as_of: date | None = None) -> tuple[list[Path], list[Path]]:
+    """Returns (rendered, skipped). Skipped are stale provisional files."""
     if not out_dir.exists():
-        return []
-    return [render_file(p) for p in sorted(out_dir.glob("*.md"))]
+        return [], []
+    rendered, skipped = [], []
+    for p in sorted(out_dir.glob("*.md")):
+        if is_stale(p, as_of):
+            skipped.append(p)
+        else:
+            rendered.append(render_file(p))
+    return rendered, skipped
 
 
 # --- dashboard.html -----------------------------------------------------------------

@@ -65,13 +65,60 @@ def test_render_file_writes_html_twin(tmp_path):
 def test_render_all_finds_every_md(tmp_path):
     (tmp_path / "today.md").write_text("# A")
     (tmp_path / "week-01.md").write_text("# B")
-    rendered = render.render_all(out_dir=tmp_path)
+    rendered, skipped = render.render_all(out_dir=tmp_path)
     assert len(rendered) == 2
     assert {p.name for p in rendered} == {"today.html", "week-01.html"}
+    assert skipped == []
 
 
 def test_render_all_empty_dir_returns_empty(tmp_path):
-    assert render.render_all(out_dir=tmp_path / "nonexistent") == []
+    assert render.render_all(out_dir=tmp_path / "nonexistent") == ([], [])
+
+
+# --- provisional staleness guard ----------------------------------------------
+# out/tomorrow.md is a projection written the evening before. Rendering a
+# stale one would turn yesterday's guess into a fresh-looking page.
+
+
+def test_stale_tomorrow_is_skipped_not_rendered(tmp_path):
+    (tmp_path / "today.md").write_text("# 02-08 · today")
+    (tmp_path / "tomorrow.md").write_text("# 25-12 · **Provisional**")
+    rendered, skipped = render.render_all(out_dir=tmp_path, as_of=date(2026, 8, 2))
+    assert {p.name for p in rendered} == {"today.html"}
+    assert {p.name for p in skipped} == {"tomorrow.md"}
+    assert not (tmp_path / "tomorrow.html").exists()
+
+
+def test_tomorrow_dated_tomorrow_renders(tmp_path):
+    (tmp_path / "tomorrow.md").write_text("# 03-08 · **Provisional**")
+    rendered, skipped = render.render_all(out_dir=tmp_path, as_of=date(2026, 8, 2))
+    assert {p.name for p in rendered} == {"tomorrow.html"}
+    assert skipped == []
+
+
+def test_tomorrow_dated_today_still_renders(tmp_path):
+    """The evening it was written, /preview's file is for 'tomorrow'; the next
+    morning that same date is 'today' and it's still the live projection."""
+    (tmp_path / "tomorrow.md").write_text("# 02-08 · **Provisional**")
+    rendered, _ = render.render_all(out_dir=tmp_path, as_of=date(2026, 8, 2))
+    assert len(rendered) == 1
+
+
+def test_tomorrow_without_a_date_header_is_treated_as_stale(tmp_path):
+    """A provisional file that won't say which day it's for can't be trusted."""
+    (tmp_path / "tomorrow.md").write_text("## Tomorrow — 5 mi easy")
+    rendered, skipped = render.render_all(out_dir=tmp_path, as_of=date(2026, 8, 2))
+    assert rendered == []
+    assert len(skipped) == 1
+
+
+def test_non_provisional_files_are_never_staleness_checked(tmp_path):
+    """today.md is written fresh by /daily and is not a projection — an old
+    date in it is /daily's problem, not render's."""
+    (tmp_path / "today.md").write_text("# 25-12 · ancient")
+    rendered, skipped = render.render_all(out_dir=tmp_path, as_of=date(2026, 8, 2))
+    assert len(rendered) == 1
+    assert skipped == []
 
 
 # --- dashboard ----------------------------------------------------------------

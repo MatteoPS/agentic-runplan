@@ -1,5 +1,14 @@
 Run the daily training ritual for marathon-2026. Follow this sequence exactly.
 
+## 0. State guard
+
+Run `mc state --check` first. If it refuses, the private state repo is behind
+its remote — another machine wrote training history you don't have. **Stop and
+pull.** Do not work around it: `training-log.md`, `strength_schedule.json` and
+`pushed.json` are rewritten whole with no merge logic, so writing from a stale
+copy deletes the other machine's day silently. (No-op when `MC_STATE_DIR`
+isn't set.)
+
 ## 1. Sync and digest
 
 Run `mc sync` (in this terminal, not backgrounded — if it needs Garmin MFA it
@@ -23,6 +32,12 @@ Read, in order:
   went as planned or I had to skip/swap something (check for any row
   whose Actual doesn't match its Proposed)
 - The last 14 days of `log/sessions/*.md`
+
+Also run `mc plan --days 3` for this week's persisted day layout and the two
+days after today — that's what fills the "Next 2 days" section below. If it
+reports no layout for this week, `/week` hasn't run: decide the layout now per
+`/week` step 5 and persist it with `mc layout` before continuing, rather than
+projecting from a weekly average.
 
 Also run `mc strength <week_num> --week-start DD-MM` (no `--set-days`) for
 this week's fixed strength days and progression tier — this week's two days
@@ -110,6 +125,13 @@ optional.>
 |---|---|---|---|
 <remaining days this week, reason column uses closed codes from §6 E1 or "—">
 
+## Next 2 days (provisional)
+<from `mc plan --days 3` — its rows for tomorrow and the day after, with the
+assumptions line printed verbatim above them. See `.claude/commands/plan.md`
+for what these days may and may not do: never `mc propose`d, never pushed,
+no substitution table, and they add no questions. The heading must contain
+the word "provisional" — that's what keeps `mc push` from consuming them.>
+
 ## Watch
 - <specific things to monitor, or "nothing">
 
@@ -133,9 +155,24 @@ automatically by tomorrow's `mc digest` step, once real data exists — that's
 how you'll know the day after whether I actually did this, did
 something else, or skipped it, without having to ask again.
 
+Finally, run `mc state --save "daily DD-MM"` to commit and push today's state.
+This is what makes the day visible to any other machine — skipping it leaves
+the next `/daily` there working from history that looks complete but isn't.
+(No-op when `MC_STATE_DIR` isn't set.)
+
 ## Reason codes (closed set, §6 E1)
 
 `TRAVEL RACE ILLNESS INJURY SHIN HAMSTRING HEAT WEATHER LIFE READINESS OVERRIDE`
 
 "I feel tired" is not a reason code. `READINESS` requires citing actual data
 (HRV, sleep, RHR numbers), not a vibe.
+
+If I type a literal `OVERRIDE: <reason>`, record it with
+`mc override "<reason>" --code <CODE>`. Never run that command on a
+paraphrase, however close — E4 means the literal string, and this command is
+the writer for that moment, not the judge of it. It warns when the count
+passes E5's limit of 2 in a 4-week block; if it does, propose a **structural**
+revision for approval, not another override.
+
+Run `mc drift` when the rolling picture is in question (E2/E5) — it states the
+shortfall in miles and which reason codes keep recurring, in plain sentences.
