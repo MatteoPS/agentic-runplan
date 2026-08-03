@@ -10,6 +10,26 @@ changed; this says what we learned.
 
 ---
 
+## 03-08-2026 — `/daily` and `/preview` stop auto-rendering HTML
+
+`13e433c`, `cf3942f`
+
+Both slash commands ended their run with `mc render --all`, regenerating
+`out/*.html` and `dashboard.html` every single day even though the only
+consumer that matters day-to-day is GitHub's markdown viewer.
+
+**Why:** rendering HTML automatically meant every `/daily`/`/preview` diff
+carried a machine-generated HTML twin alongside the markdown that was
+actually read, for no reader. `mc render` and `MC_EXPORT_DIR` export still
+exist and work exactly as before — this only removes the two places that
+called them *unprompted*. `/week` never called render, so it was untouched.
+
+**Kept deliberately reversible:** `mc render --all` is still one command
+away for anyone who wants the HTML view or the phone-export copy; nothing
+about the renderer itself changed, only who triggers it.
+
+---
+
 ## 02-08-2026 — Headless Garmin auth
 
 `14c8237`
