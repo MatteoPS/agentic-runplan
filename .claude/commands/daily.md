@@ -144,10 +144,9 @@ Terse. No motivational filler. No emoji beyond ✅/⚠️/❌ verdict markers an
 ⚠️ warning line. Units are miles and min/mile. If behind, the first line says
 so plainly (§6 E3) — never soften it.
 
-Then run `mc render --all` to produce `out/today.html` and refresh
-`out/dashboard.html` (skipped otherwise — dashboard.html is not a byproduct
-of the plain `mc render` used here for `today.md` alone), append a summary
-line to
+`/daily` writes `out/today.md` only — no HTML rendering (read on GitHub as
+markdown; run `mc render --all` yourself if you ever want the HTML twin).
+Append a summary line to
 `log/sessions/YYYY-MM-DD.md` via `mc log "<summary>"`, and record the day's
 prescription in `log/training-log.md` via `mc propose "<today's session>"`
 (same text as the "## Today —" line). Its Actual column fills in
