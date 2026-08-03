@@ -59,7 +59,9 @@ forecast number or the reason it doesn't matter>
   shins at 2+, heat above X>
 ```
 
-Then `mc render --all`, and `mc state --save "preview DD-MM"`.
+`/preview` writes `out/tomorrow.md` only — no HTML rendering (run `mc render
+--all` yourself if you ever want the HTML twin). Then `mc state --save
+"preview DD-MM"`.
 
 ## Hard rules
 
