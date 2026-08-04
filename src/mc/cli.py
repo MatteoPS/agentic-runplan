@@ -539,7 +539,7 @@ def export_cmd():
 
 
 @app.command(name="render")
-def render_cmd(all_: bool = typer.Option(False, "--all", help="Render every .md in out/ plus dashboard.html")):
+def render_cmd(all_: bool = typer.Option(False, "--all", help="Render every .md in out/ plus dashboard.md/.html")):
     """Markdown -> standalone HTML."""
     if all_:
         paths, skipped = render_mod.render_all()
@@ -553,10 +553,12 @@ def render_cmd(all_: bool = typer.Option(False, "--all", help="Render every .md 
         try:
             plan = plan_mod.load_plan()
             activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
+            dash_md = render_mod.write_dashboard_md(plan, activities)
+            console.print(f"rendered {dash_md}")
             dash = render_mod.write_dashboard(plan, activities)
             console.print(f"rendered {dash}")
         except FileNotFoundError:
-            console.print("[yellow]no plan.lock.json — skipping dashboard.html[/yellow]")
+            console.print("[yellow]no plan.lock.json — skipping dashboard.md/.html[/yellow]")
         if not paths:
             console.print("[yellow]out/ has no .md files yet[/yellow]")
         # Export rides on --all so /daily covers it with no extra step. Silent

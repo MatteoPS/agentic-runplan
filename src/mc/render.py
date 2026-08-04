@@ -194,9 +194,11 @@ def render_all(out_dir: Path = cfg.OUT_DIR, as_of: date | None = None) -> tuple[
     return rendered, skipped
 
 
-# --- dashboard.html -----------------------------------------------------------------
-# No markdown source (see §2 file tree — dashboard.html has no dashboard.md
-# twin) since this is a data visualization, not a document.
+# --- dashboard.md / dashboard.html -----------------------------------------------------
+# Both built directly from plan + activities (no shared markdown source between
+# them) — dashboard.md is the plain-table twin for GitHub's markdown viewer,
+# dashboard.html keeps the progress-bar rendering `render_file` can't produce
+# from a .md source.
 
 
 def _bar(pct: float, color: str = "currentColor") -> str:
@@ -306,6 +308,84 @@ is just a fixed same-distance-to-race reference point.</p>
 </table>
 """
     return render_markdown_fragment(body, title="Marathon 2026 — dashboard")
+
+
+def build_dashboard_markdown(plan: PlanLock, garmin_activities: list[dict[str, Any]], as_of: date | None = None) -> str:
+    as_of = as_of or date.today()
+    weeks_to_race = max(0, (plan.race_date - as_of).days // 7)
+    actuals = _actuals_by_week(plan, garmin_activities, as_of=as_of)
+
+    lines = [
+        "# Marathon 2026 — dashboard",
+        "",
+        f"as of {as_of.strftime('%d-%m-%Y')}",
+        "",
+        f"**{weeks_to_race} weeks to race** ({plan.race_date.strftime('%d-%m-%Y')})",
+        "",
+    ]
+
+    travel_weeks = [w for w in plan.weeks if w.block == "travel_italy"]
+    travel_range = ""
+    if travel_weeks:
+        start = travel_weeks[0].wc.strftime("%d-%m")
+        end = (travel_weeks[-1].wc + timedelta(days=6)).strftime("%d-%m")
+        travel_range = f"{start} → {end}"
+
+    lines += [
+        "## Travel block",
+        "",
+        f"{travel_range or 'none'} — opportunistic long run, no quality, no gym (bodyweight only)",
+        "",
+        "## Plan vs actual, week by week",
+        "",
+        '"Higdon Long"/"Higdon weekly volume" are Hal Higdon\'s original '
+        "Intermediate 1 plan (plan/plan-source.md), unedited, aligned on marathon "
+        "week: his 18-week plan and this 14-week one both end race week, so our "
+        "week N lines up with his week N+4 (his weeks 1-4 have no equivalent "
+        "here). Not the same as what this plan explicitly borrows from Higdon "
+        "week-for-week (see each week's `source_week` in plan.lock.json) — this "
+        "is just a fixed same-distance-to-race reference point.",
+        "",
+        "| Week | Week to event | Block | Long run | Weekly volume | Run days | Higdon Long | Higdon weekly volume |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+
+    for week in plan.weeks:
+        act = actuals[week.week]
+        started = act["has_started"]
+        long_run_pct = (act["long_run"] / week.long_run_mi * 100) if started and week.long_run_mi else None
+        vol_pct = (act["run_miles"] / week.run_miles * 100) if started and week.run_miles else None
+        week_to_event = max(0, (plan.race_date - week.wc).days // 7)
+        higdon = HIGDON_ORIGINAL.get(week.week + 4)
+        higdon_long = f"{higdon[0]:g}mi" if higdon else "—"
+        higdon_vol = f"{higdon[1]:g}mi" if higdon else "—"
+        travel_marker = " 🧳" if week.block == "travel_italy" else ""
+        long_run_cell = (
+            f"{week.long_run_mi:g}mi planned / {act['long_run']}mi actual ({long_run_pct:.0f}%)"
+            if started
+            else f"{week.long_run_mi:g}mi planned / —"
+        )
+        vol_cell = (
+            f"{week.run_miles:g}mi / {act['run_miles']}mi ({vol_pct:.0f}%)"
+            if started
+            else f"{week.run_miles:g}mi / —"
+        )
+        run_days_cell = f"{week.run_days}d planned / {act['run_days']}d" if started else f"{week.run_days}d planned / —"
+        lines.append(
+            f"| Week {week.week} · w/c {week.wc.strftime('%d-%m')}{travel_marker} | {week_to_event} | "
+            f"{week.block} | {long_run_cell} | {vol_cell} | {run_days_cell} | {higdon_long} | {higdon_vol} |"
+        )
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_dashboard_md(plan: PlanLock, garmin_activities: list[dict[str, Any]], as_of: date | None = None) -> Path:
+    cfg.OUT_DIR.mkdir(parents=True, exist_ok=True)
+    md_text = build_dashboard_markdown(plan, garmin_activities, as_of)
+    path = cfg.OUT_DIR / "dashboard.md"
+    path.write_text(md_text)
+    return path
 
 
 def render_markdown_fragment(body_html: str, title: str) -> str:
