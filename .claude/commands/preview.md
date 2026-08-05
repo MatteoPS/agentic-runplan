@@ -28,7 +28,15 @@ run `/daily` before heading out.
 ## 2. Preview tomorrow
 
 Run `mc plan --days 2` (today + tomorrow) and read tomorrow's row, plus
-`plan/plan.lock.json`, this week's layout, and the forecast if available.
+`plan/plan.lock.json`, this week's layout, and `mc weather --date <tomorrow>`.
+
+`mc weather` is what makes "The call" below an answer rather than a hedge: it
+gives tomorrow's feels-like and dew point per training window, worst hour
+first, with the coolest window marked. Quote the actual number — "early
+(05:00-08:00) is 75°F feels-like at a 64°F dew point, evening is 85°F at 73°F"
+— never "it'll be warm". If the forecast is missing or stale, say that plainly
+and make the call on the reason it doesn't matter (an indoor session, a rest
+day), rather than inventing a temperature.
 
 Write `out/tomorrow.md`. It **must** carry:
 

@@ -128,16 +128,27 @@ def test_explicit_argument_overrides_detection(monkeypatch, captured_prompt):
 # --- the whole way up through mc sync -------------------------------------------------
 
 
-def test_sync_reports_an_auth_failure_instead_of_crashing(monkeypatch):
+def test_sync_reports_an_auth_failure_instead_of_crashing(monkeypatch, tmp_path):
     """GarminAuthError must land in the source report as a clean ok=False, so
     /daily's step 1 sees `ok: false` and says the data didn't arrive (§7),
     rather than the process dying mid-run."""
     from mc import sync as sync_mod
+    from mc import weather as weather_mod
 
     def raise_auth(*_a, **_k):
         raise garmin.GarminAuthError("Garmin wants an MFA code, but there's no terminal")
 
     monkeypatch.setattr(sync_mod.garmin, "sync_garmin", raise_auth)
+
+    # run_sync writes for real. Without this it overwrites the actual
+    # sync_report.json in MC_STATE_DIR with a fabricated auth failure, and
+    # `mc digest` then reports a Garmin outage that never happened. It also
+    # reaches weather.sync_weather, which would make a live Open-Meteo call
+    # from the test suite the moment the cached activity list has a GPS fix.
+    monkeypatch.setattr(sync_mod.cfg, "SYNC_REPORT_PATH", tmp_path / "sync_report.json")
+    monkeypatch.setattr(weather_mod.cfg, "RAW_WEATHER_DIR", tmp_path / "weather")
+    monkeypatch.setenv("MC_WEATHER", "off")
+
     report = sync_mod.run_sync(source="garmin", interactive=False)
 
     assert not report.all_ok

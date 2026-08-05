@@ -10,7 +10,9 @@ from typing import Any
 
 from mc import config as cfg
 from mc import intervals
+from mc import metrics
 from mc import sync
+from mc import weather
 
 # Order sections/rows appear in — run/cross are what I actually do
 # (per my profile), everything else trails.
@@ -71,17 +73,9 @@ def latest_garmin_wellness_value(
 
 
 def _garmin_local_start(activity: dict[str, Any]) -> datetime | None:
-    """Local wall-clock start time — distinct from sync.py's parse_garmin_start,
-    which deliberately uses startTimeGMT for cross-source UTC comparison. Time-
-    of-day patterns need the athlete's actual local clock time and local
-    calendar date (for weekday/weekend), not UTC."""
-    raw = activity.get("startTimeLocal")
-    if not raw:
-        return None
-    try:
-        return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return None
+    """Kept as a module-local name because traininglog.py already calls it.
+    The implementation moved to sync.py once metrics.py needed it too."""
+    return sync.parse_garmin_local_start(activity)
 
 
 def _minutes_since_midnight(dt: datetime) -> int:
@@ -340,6 +334,12 @@ def _data_health_lines(report: sync.SyncReport | None) -> list[str]:
         f"garmin-only {len(m.garmin_only)} · intervals-only {len(m.intervals_only)} · "
         f"field disagreements {len(report.field_disagreements)}"
     )
+
+    w = report.weather
+    if w is not None and not w.ok:
+        # Bold, like a stale source: a forecast that didn't arrive must not be
+        # discoverable only by noticing the numbers below are yesterday's.
+        lines.append(f"- **weather: {'FAILED' if w.attempted else 'not fetched'} — {w.error}**")
     for name, s in report.sources.items():
         for note in s.notes:
             lines.append(f"- *{name} note*: {note}")
@@ -481,6 +481,8 @@ def render_markdown(as_of: date) -> str:
 
     tod_buckets = extract_time_of_day_patterns(garmin_activities)
     log_rows = recent_activity_log(garmin_activities, as_of)
+    form_rows = metrics.run_metrics(garmin_activities, as_of)
+    cadence = metrics.cadence_baseline(garmin_activities, as_of)
     volumes = [rolling_run_volume(garmin_activities, w, as_of) for w in ROLLING_WINDOWS_DAYS]
     wellness = build_wellness_snapshot(as_of)
 
@@ -496,6 +498,16 @@ def render_markdown(as_of: date) -> str:
 
     lines.append(f"## Recent activity log (last {RECENT_LOG_DAYS} days)")
     lines += _activity_log_table(log_rows)
+    lines.append("")
+
+    lines.append(f"## Running form (last {metrics.FORM_WINDOW_DAYS} days)")
+    lines += metrics.form_table(form_rows)
+    lines.append("")
+    lines += metrics.form_summary_lines(form_rows, cadence)
+    lines.append("")
+
+    lines.append("## Weather")
+    lines += weather.digest_lines(as_of)
     lines.append("")
 
     lines.append("## Rolling volume")

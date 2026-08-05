@@ -31,6 +31,7 @@ STATE_ROOT = Path(os.environ.get("MC_STATE_DIR") or PROJECT_ROOT).expanduser()
 DATA_DIR = STATE_ROOT / "data"
 RAW_GARMIN_DIR = DATA_DIR / "raw" / "garmin"
 RAW_INTERVALS_DIR = DATA_DIR / "raw" / "intervals"
+RAW_WEATHER_DIR = DATA_DIR / "raw" / "weather"
 GARMIN_TOKENS_DIR = DATA_DIR / ".garmin_tokens"
 DIGEST_DIR = DATA_DIR / "digest"
 SYNC_REPORT_PATH = DATA_DIR / "sync_report.json"
@@ -101,5 +102,5 @@ def require_intervals_credentials(s: Settings = settings) -> tuple[str, str]:
 
 
 def ensure_data_dirs() -> None:
-    for d in (RAW_GARMIN_DIR, RAW_INTERVALS_DIR, GARMIN_TOKENS_DIR, DIGEST_DIR):
+    for d in (RAW_GARMIN_DIR, RAW_INTERVALS_DIR, RAW_WEATHER_DIR, GARMIN_TOKENS_DIR, DIGEST_DIR):
         d.mkdir(parents=True, exist_ok=True)

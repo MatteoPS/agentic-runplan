@@ -21,6 +21,7 @@ from mc import strength as strength_mod
 from mc import state as state_mod
 from mc import sync as sync_mod
 from mc import traininglog as tlog_mod
+from mc import weather as weather_mod
 
 app = typer.Typer(add_completion=False, help="mc — adaptive marathon training system")
 console = Console()
@@ -91,6 +92,88 @@ def digest(date_: str = typer.Option(None, "--date", help="DD-MM, defaults to to
     filled = tlog_mod.fill_pending_actuals(activities, up_to=as_of - timedelta(days=1))
     if filled:
         console.print(f"[dim]Backfilled {filled} pending entr{'y' if filled == 1 else 'ies'} in {cfg.TRAINING_LOG_PATH}[/dim]")
+
+
+@app.command()
+def weather(
+    date_: str = typer.Option(None, "--date", help="DD-MM, defaults to today"),
+    days: int = typer.Option(2, "--days", "-n", help="How many days to show, including --date"),
+    refresh: bool = typer.Option(False, "--refresh", help="Fetch now instead of reading the cache"),
+):
+    """Ambient conditions by training window — the numbers behind "outdoor and
+    early, or indoors any time?".
+
+    Normally reads the cache written by `mc sync`. Each window is summarised by
+    its *worst* hour, because a window is a commitment to be outside for all of
+    it. Heat levels are none/noticeable/hard/extreme — input you cite when
+    exercising §6 C2, never a trigger that fires by itself.
+    """
+    as_of = _parse_ddmm(date_) if date_ else date.today()
+
+    if refresh:
+        activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
+        location = weather_mod.resolve_location(activities)
+        if location is None:
+            console.print(
+                "[yellow]No location: no GPS activity in the last "
+                f"{weather_mod.LOCATION_MAX_AGE_DAYS} days, and MC_WEATHER_LAT/LON "
+                "isn't set in .env.[/yellow]"
+            )
+            raise typer.Exit(1)
+        try:
+            weather_mod.fetch(location)
+        except weather_mod.WeatherError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1) from e
+
+    envelope = weather_mod.load_cached()
+    if envelope is None:
+        console.print("[yellow]No weather cached — run `mc sync`, or `mc weather --refresh`.[/yellow]")
+        raise typer.Exit(1)
+
+    age = weather_mod.cache_age_hours(envelope)
+    loc = envelope.get("location") or {}
+    console.print(
+        f"[dim]{loc.get('lat')}, {loc.get('lon')} (from {loc.get('source', 'unknown')}) · "
+        f"fetched {f'{age:.0f}h ago' if age is not None else 'unknown'}[/dim]"
+    )
+    if age is not None and age > weather_mod.STALE_HOURS:
+        console.print(
+            f"[yellow]Forecast is {age:.0f}h old (>{weather_mod.STALE_HOURS}h) — "
+            f"re-run `mc sync` before trusting it.[/yellow]"
+        )
+
+    hours = weather_mod.hours_from_payload(envelope.get("data") or {})
+    if not hours:
+        console.print("[yellow]Cached payload has no hourly data.[/yellow]")
+        raise typer.Exit(1)
+
+    for offset in range(max(1, days)):
+        day = as_of + timedelta(days=offset)
+        windows = weather_mod.windows_for_day(hours, day)
+        if not windows:
+            console.print(f"[yellow]{day.strftime('%d-%m')}: no forecast hours cached.[/yellow]")
+            continue
+        best = weather_mod.best_window(windows)
+        table = Table(title=day.strftime("%d-%m"))
+        for col in ("Window", "Feels like", "Dew point", "Precip", "Wind", "Heat"):
+            table.add_column(col)
+        for w in windows:
+            coolest = best is not None and w.name == best.name
+            table.add_row(
+                f"[green]{w.label} ←[/green]" if coolest else w.label,
+                weather_mod.fmt_temp(w.feels_like_f),
+                weather_mod.fmt_temp(w.dew_point_f),
+                f"{w.precip_prob:.0f}%" if w.precip_prob is not None else "—",
+                f"{w.wind_mph:.0f} mph" if w.wind_mph is not None else "—",
+                w.heat.value,
+            )
+        console.print(table)
+
+    console.print(
+        "[dim]Worst hour in each window. Heat level is a reporting label, not a §4 "
+        "verdict and not a §6 trigger — cite the numbers when applying C2.[/dim]"
+    )
 
 
 @app.command()

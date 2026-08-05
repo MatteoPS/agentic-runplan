@@ -28,7 +28,8 @@ local cache under `data/` (gitignored, regenerated on demand).
 
 ## The daily ritual
 
-`/daily` runs: `mc sync` → `mc digest` → read the digest + `plan.lock.json` +
+`/daily` runs: `mc sync` (which also refreshes the forecast) → `mc digest` →
+read the digest + `plan.lock.json` +
 `context/` + last 14 days of `log/` → ask **at most 4** questions (feel 1-10,
 sleep, shins/hamstring, anything changing in the next 7 days — never more,
 never pad), **plus a 5th only when a fixed strength day from earlier this
@@ -106,6 +107,36 @@ asks me to confirm done/missed. Done gets logged; missed
 auto-reschedules onto the best remaining day that week (`mc strength
 --confirm ...:missed --reschedule-candidates ...`) or, if nothing suitable
 is left, stays missed — no cross-week makeup.
+
+## Weather & running form (added 04-08-2026)
+
+`mc weather` reports ambient conditions by training window (`early` /
+`morning` / `midday` / `evening`), each summarised by its **worst** hour — a
+window is a commitment to be outside for all of it. Source is Open-Meteo: no
+API key, one call per `mc sync`, a different provider from Garmin so it
+competes for no rate budget. The only thing sent is one coordinate pair
+rounded to 2dp, taken from the most recent GPS activity (so it follows me to
+Italy) unless `MC_WEATHER_LAT/LON` overrides it. The source used is printed
+every time. `MC_TEMP_UNIT=celsius` for the Italy block; °F is canonical
+internally so thresholds never shift with the display.
+
+Heat levels are `none · noticeable · hard · extreme` — a **separate
+vocabulary from §4's verdicts**, deliberately not overlapping, and **not a §6
+trigger on their own**. C2 is a permission I exercise citing these numbers,
+the same way it already demands cited HRV/sleep/RHR. Classification takes the
+worse of feels-like and dew point; dew point matters more, since it decides
+whether sweat can evaporate.
+
+The digest also carries a **Running form** section: cadence, elevation gain,
+and Garmin's grade-adjusted pace against raw pace. All of it comes from the
+activity-list call `mc sync` already made — **zero extra API calls**; these
+fields were being fetched and dropped. Cadence is the cheapest objective
+proxy for D2 (gait change), which is otherwise pure self-report — but it
+tracks pace and terrain too, so a drop is reported next to that run's pace
+and is never a finding (§6 D6). Garmin's own `minTemperature`/`maxTemperature`
+is deliberately **not** used: it's a wrist sensor against a warm arm, it
+measures the watch rather than the air, and `mc weather` answers that question
+properly.
 
 ## §4 verdict vocabulary — fixed, never invent new labels
 

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from mc import config as cfg
 from mc import garmin
 from mc import intervals
+from mc import weather as weather_mod
 
 DEFAULT_SINCE_DAYS = garmin.DEFAULT_SINCE_DAYS
 MAX_SINCE_DAYS = garmin.MAX_SINCE_DAYS
@@ -121,9 +122,15 @@ class SyncReport(BaseModel):
     sources: dict[str, SourceReport]
     activity_matching: ActivityMatching
     field_disagreements: list[MatchedActivity]
+    # Optional so an existing sync_report.json written before weather existed
+    # still parses — _load_previous_report falls back to None on any failure,
+    # and silently losing carry-over state would be a poor trade for a field
+    # that defaults cleanly.
+    weather: weather_mod.WeatherSyncReport | None = None
 
     @property
     def all_ok(self) -> bool:
+        """Garmin and intervals only, deliberately — see WeatherSyncReport."""
         return all(s.ok for s in self.sources.values() if s.requested)
 
 
@@ -136,6 +143,23 @@ def parse_garmin_start(activity: dict[str, Any]) -> datetime | None:
         return None
     try:
         return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def parse_garmin_local_start(activity: dict[str, Any]) -> datetime | None:
+    """Local wall-clock start — distinct from parse_garmin_start above, which
+    deliberately uses startTimeGMT for cross-source UTC comparison. Anything
+    reasoning about the athlete's day (time-of-day patterns, which calendar
+    date a session belongs to, weekday vs weekend) needs local time instead.
+
+    Lives here rather than in digest.py because metrics.py needs it too, and
+    digest.py imports metrics.py."""
+    raw = activity.get("startTimeLocal")
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
     except ValueError:
         return None
 
@@ -482,11 +506,20 @@ def run_sync(
         if any(fc.flag for fc in matched.fields.values()):
             field_disagreements.append(matched)
 
+    # One HTTP call, a different provider from Garmin, and never fatal: this
+    # runs on every sync regardless of --source, because /daily and /preview
+    # both need a current forecast and neither should have to remember a
+    # second command to get one.
+    weather_report = weather_mod.sync_weather(garmin_activities)
+    if weather_report.attempted and not weather_report.ok:
+        print(f"[sync] weather FAILED (non-critical): {weather_report.error}", file=sys.stderr)
+
     report = SyncReport(
         generated_at=datetime.now(timezone.utc),
         requested_source=source,
         since_days=since_days,
         sources={"garmin": garmin_report, "intervals": intervals_report},
+        weather=weather_report,
         activity_matching=ActivityMatching(
             tolerance_minutes=MATCH_TOLERANCE_MINUTES,
             matched_count=len(matches),

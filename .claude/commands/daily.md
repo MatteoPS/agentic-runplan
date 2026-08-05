@@ -39,6 +39,16 @@ reports no layout for this week, `/week` hasn't run: decide the layout now per
 `/week` step 5 and persist it with `mc layout` before continuing, rather than
 projecting from a weekly average.
 
+Run `mc weather` for today's and tomorrow's conditions by training window.
+This is what backs the "forecast note" in the Today line below and the time-of
+-day choice under C6 — pair it with the digest's time-of-day table, which shows
+which slots I actually use. If the heat level is `hard` or `extreme` in every
+window I'd realistically train in, that is a **cited** C2 trigger (quote the
+feels-like and dew point, never just "it's hot"). It is still only a trigger,
+never an automatic swap: weigh it with shins and readiness like any other
+signal. If `mc weather` reports no cached forecast or a stale one, say so
+rather than reasoning about weather you don't have (§7).
+
 Also run `mc strength <week_num> --week-start DD-MM` (no `--set-days`) for
 this week's fixed strength days and progression tier — this week's two days
 were chosen during `/week`. If it reports "not yet set for this week" (e.g.
