@@ -203,6 +203,17 @@ avoiding hills to protect it. Eccentric-biased because downhill running is an
 eccentric load, and knee-dominant/upright so it stays hamstring-safe by the
 same standard as `HAMSTRING_SAFE_ITEMS`.
 
+**Downhill preparation lives in `context/downhill.md`** — a week-by-week route
+plan, read by `/daily` and `/week` with the rest of `context/`. It changes
+**routes, never mileage** (C1/C3); if a course-profile run comes out longer
+than the planned distance, the planned distance wins. The finding it rests on:
+the athlete's long runs already carry ~50-75 ft/mile against the course's 57,
+so total elevation is *not* the gap — NYC delivers its descent in a few
+unbroken chunks (210 ft inside mile 2) where the park delivers it in twenty
+short ones. Progress **continuous descents of ≥100 ft**, not total gain. Week
+11's 20 is the only full course-profile rehearsal available, because A4
+freezes the taper.
+
 **Carbohydrate and hydration are two separate lines, never merged.** An
 electrolyte tab (Liquid I.V. ≈ 11 g carb, 500 mg sodium) is most of an hour's
 sodium and about half a gel — it counts toward fluid/sodium, not toward the
