@@ -91,3 +91,35 @@ def test_gels_and_drink_have_different_timing():
     lines = " ".join(fuel.plan_lines(fuel.build_plan(20.0, week_num=11)))
     assert "first at 35 min" in lines
     assert "continuously from the start" in lines
+
+
+def test_carry_assumes_one_carb_bottle_not_two():
+    """The other bottle holds water and electrolyte. Counting both as carb mix
+    would contradict the split this module recommends and imply drinking a 16%
+    solution with no water alongside it."""
+    plan = fuel.build_plan(20.0, week_num=11)
+    both_bottles = (plan.refills + 1) * fuel.CARB_MIX_G_PER_500ML
+    assert plan.carbs_from_bottles == round(both_bottles / 2)
+
+
+def test_long_runs_outgrow_the_belt():
+    """500 ml at a time can't fuel a 20-miler however often it's re-dosed."""
+    plan = fuel.build_plan(20.0, week_num=11)
+    assert not plan.liquid_only_is_enough
+    assert plan.gel_gap_g > 0
+    assert plan.carbs_from_bottles + plan.gel_gap_g == plan.total_grams
+    assert "gels)** to carry" in " ".join(fuel.plan_lines(plan))
+
+
+def test_shorter_long_runs_can_go_liquid_only():
+    plan = fuel.build_plan(9.0, week_num=3)
+    assert plan.liquid_only_is_enough
+    assert plan.gel_gap_g == 0
+
+
+def test_refills_count_stops_not_bottlefuls():
+    """The belt leaves home full, so 1500 ml means two refills, not three."""
+    plan = fuel.build_plan(9.0, week_num=3)
+    mid = sum(fuel.FLUID_ML_PER_HR) / 2
+    needed = mid * plan.duration_min / 60
+    assert plan.refills == int(-(-needed // fuel.BELT_CAPACITY_ML)) - 1

@@ -69,6 +69,19 @@ ELECTROLYTE_TAB_SODIUM_MG = 500
 FLUID_ML_PER_HR = (400, 800)
 SODIUM_MG_PER_HR = (300, 600)
 
+# What the athlete will actually carry: 2 x 250 ml bottles on a belt, confirmed
+# 05-08-2026, with an explicit preference for not carrying more. Planning
+# against real capacity rather than an ideal one is the difference between a
+# plan that gets followed and one that gets abandoned at mile 6 -- Central Park
+# fountains make refilling the right answer here rather than a bigger vest.
+BELT_CAPACITY_ML = 500
+
+# Grams of carbohydrate a 500 ml bottle holds at the concentration the
+# high-carb mixes are designed for (Maurten Drink Mix 320, SiS Beta Fuel and
+# Precision Fuel PF90 are all 80-90 g per 500 ml). Ordinary mixes are half
+# this; a plain electrolyte tab is ~11 g and is not a fuel product at all.
+CARB_MIX_G_PER_500ML = 80
+
 # Don't start the clock at the gun -- the first 30-40 minutes run on what was
 # eaten beforehand, and an early gel is one more chance for the stomach to
 # object with the whole run still ahead.
@@ -123,6 +136,40 @@ class FuelPlan:
         a number in the digest that the schedule beneath it doesn't deliver.
         """
         return max(self.total_grams - self.grams_from_gels, 0)
+
+    @property
+    def refills(self) -> int:
+        """Fountain stops implied by belt capacity at the mid fluid rate.
+
+        Counts the *stops*, not the bottles: the belt leaves home full, so a run
+        needing 1500 ml needs two refills, not three.
+        """
+        mid_ml_per_hr = sum(FLUID_ML_PER_HR) / 2
+        needed_ml = mid_ml_per_hr * self.duration_min / 60
+        return max(int(-(-needed_ml // BELT_CAPACITY_ML)) - 1, 0)
+
+    @property
+    def carbs_from_bottles(self) -> int:
+        """Carbohydrate the belt can actually deliver across the run.
+
+        Counts **one** of the two bottles as carb mix, because the other holds
+        water and electrolyte — assuming both would contradict the split this
+        module recommends, and would mean drinking a 16% solution with no water
+        alongside it for three hours. Re-dosed from a sachet at every refill,
+        so the ceiling is per-fill capacity times fills, not one bottleful.
+        """
+        per_fill = CARB_MIX_G_PER_500ML * (BELT_CAPACITY_ML / 2) / 500
+        return round((self.refills + 1) * per_fill)
+
+    @property
+    def liquid_only_is_enough(self) -> bool:
+        """Whether drink alone reaches the target. When False the gap is gels,
+        and saying so now beats discovering it at mile 14."""
+        return self.carbs_from_bottles >= self.total_grams
+
+    @property
+    def gel_gap_g(self) -> int:
+        return max(self.total_grams - self.carbs_from_bottles, 0)
 
     @property
     def summary(self) -> str:
@@ -212,6 +259,29 @@ def plan_lines(plan: FuelPlan | None) -> list[str]:
         f"~{ELECTROLYTE_TAB_CARB_G} g carbohydrate and ~{ELECTROLYTE_TAB_SODIUM_MG} "
         f"mg sodium: most of an hour's sodium, and about half a gel. It counts "
         f"toward the sodium line, not the carbohydrate one.",
+        f"**Carry — {BELT_CAPACITY_ML} ml on the belt, ~{plan.refills} fountain "
+        f"refill(s).**",
+        f"- One bottle carbohydrate mix, one bottle water with an electrolyte "
+        f"tab. Re-dose the carb bottle from a sachet at each refill — powder "
+        f"weighs nothing, which is the whole reason this works on a belt.",
+    ]
+    if not plan.liquid_only_is_enough:
+        lines.append(
+            f"- **Liquid alone won't reach {plan.total_grams} g here.** Re-dosed "
+            f"at every refill the carb bottle delivers about "
+            f"{plan.carbs_from_bottles} g, leaving **~{plan.gel_gap_g} g "
+            f"(~{round(plan.gel_gap_g / GRAMS_PER_GEL)} gels)** to carry. The "
+            f"run is simply longer than 250 ml at a time can fuel."
+        )
+    else:
+        lines.append(
+            f"- At this distance the carb bottle can cover all "
+            f"{plan.total_grams} g on its own (~{plan.carbs_from_bottles} g "
+            f"available) if you'd rather skip gels — provided every refill gets "
+            f"re-dosed. Gels stay the simpler option; this is the choice, not a "
+            f"recommendation."
+        )
+    lines += [
         "- Eat 2-3 h beforehand, not 20 min. Log what you actually took and how "
         "the stomach handled it — that's the point of doing it now.",
     ]

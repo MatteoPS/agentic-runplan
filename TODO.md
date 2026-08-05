@@ -56,6 +56,34 @@ Assessed in `docs/todo-review.md`; the agreed sequence lives there.
   interactive MFA prompt a headless run can't answer. One writer per day
   avoids it; there's no clean fix if it happens.
 
+- **Verify `context/downhill.md`'s grades against the Strava API.** That file
+  drives the whole downhill progression — Harlem Hill, the Morningside
+  escarpment, the Riverside ramps — and every location in it is tagged
+  `[VERIFY]`: general knowledge of Manhattan geography, not a survey. The
+  progression counts *continuous descents of ≥100 ft*, so if Morningside is
+  really 60 ft rather than 150, week 5's prescription is wrong and nobody
+  finds out until race day.
+
+  **Strava's API can answer this properly.** `GET /segments/{id}` returns
+  `average_grade`, `maximum_grade`, `elevation_high`, `elevation_low` and
+  `distance`; `GET /segments/explore` finds segments inside a bounding box and
+  can filter to climbs. Running explore over a box covering Central Park,
+  Morningside and Riverside, then pulling the detail for each hit, turns every
+  `[VERIFY]` tag into a real number and would probably surface sustained
+  descents nobody thought to look for.
+
+  **Cost, honestly assessed:** this needs a new OAuth integration (Strava is
+  OAuth2 with refresh tokens, unlike the API-key clients already in `.env`),
+  which is real work for a **one-off measurement**. The output is a static
+  table of grades that doesn't change. So the cheap version — open Strava or
+  a topo map by hand, write the real numbers into `downhill.md`, delete the
+  `[VERIFY]` tags — probably wins unless route-picking becomes a recurring
+  need. Segment *descents* are also awkward: Strava indexes climbs, so a
+  descent is usually the reverse of a climb segment and may not exist as its
+  own entry.
+
+  Either way the tags must not survive into the peak weeks unchecked.
+
 ## Done
 
 - **Edit pushed activities** — a constant HR target now emits one workout step

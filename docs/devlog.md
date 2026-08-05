@@ -76,6 +76,20 @@ Counted as fuel it flatters the number; counted as nothing it loses the sodium.
 They are now two labelled lines with their own units, and fluid/sodium are
 stated as ranges because sweat rate isn't measured anywhere in this system.
 
+*A third pass added carry.* The athlete will bring 2 x 250 ml belt bottles and
+no more, which is a hard constraint the plan has to be built against rather
+than around — a fuelling plan that assumes a vest is one that gets abandoned at
+mile 6. `mc fuel` now computes fountain refills from real capacity and states
+whether drink alone can reach the target.
+
+The first cut of that got it wrong by counting both bottles as carb mix, which
+contradicted the one-carb-one-water split printed two lines above it and would
+have meant drinking a 16% solution with no water alongside for three hours.
+Corrected to one bottle, and the honest answer changes with it: 9 and 16 mile
+runs can go liquid-only, but an 18 or a 20 cannot at any re-dosing frequency —
+the 20 needs ~100 g of gels regardless. Better to say that now than to have it
+discovered at mile 14.
+
 The same split fixed a timing error. `FIRST_GEL_AT_MIN` is correct for gels —
 a bolus the stomach has to handle — but wrong for drink mix, which is sipped
 continuously from the start. The original text implied the 35-minute wait

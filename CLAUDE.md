@@ -214,6 +214,13 @@ short ones. Progress **continuous descents of ≥100 ft**, not total gain. Week
 11's 20 is the only full course-profile rehearsal available, because A4
 freezes the taper.
 
+**Carry is 2 × 250 ml bottles on a belt** (confirmed 05-08-2026, with an
+explicit preference for not carrying more). `mc fuel` plans against that real
+capacity: one bottle carb mix, one water + electrolyte tab, re-dosed from a
+sachet at each fountain refill, and it says outright when the run has outgrown
+the belt and the balance must be gels — a 20-miler needs ~100 g of gels no
+matter how often the bottle is re-dosed.
+
 **Carbohydrate and hydration are two separate lines, never merged.** An
 electrolyte tab (Liquid I.V. ≈ 11 g carb, 500 mg sodium) is most of an hour's
 sodium and about half a gel — it counts toward fluid/sodium, not toward the
