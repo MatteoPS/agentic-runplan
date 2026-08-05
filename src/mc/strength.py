@@ -16,6 +16,7 @@ from mc import config as cfg
 from mc.equivalence import (
     CALF_RAISE_TIERS,
     HAMSTRING_SAFE_ITEMS,
+    QUAD_ECCENTRIC_TIERS,
     TIBIALIS_RAISE_TIERS,
     StrengthMobilityItem,
 )
@@ -32,8 +33,19 @@ def tier_for_week(week_num: int) -> int:
 
 
 def items_for_week(week_num: int) -> list[StrengthMobilityItem]:
+    """Shins, quads, hamstring — in that order, all three tiered together.
+
+    The quad lift joined on 05-08-2026 (C4). Until then the session trained the
+    two tissues that had hurt in training and none of the one that failed in
+    the race; see `QUAD_ECCENTRIC_TIERS` for the full reasoning.
+    """
     tier = tier_for_week(week_num)
-    return [CALF_RAISE_TIERS[tier], TIBIALIS_RAISE_TIERS[tier], HAMSTRING_SAFE_ITEMS[0]]
+    return [
+        CALF_RAISE_TIERS[tier],
+        TIBIALIS_RAISE_TIERS[tier],
+        QUAD_ECCENTRIC_TIERS[tier],
+        HAMSTRING_SAFE_ITEMS[0],
+    ]
 
 
 def _load_state() -> dict:

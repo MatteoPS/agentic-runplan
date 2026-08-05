@@ -224,6 +224,7 @@ CALF_RAISE_TIERS = [
     StrengthMobilityItem(
         name="Single-leg calf raises, weighted",
         protocol="3x10, slow eccentric, add load (dumbbell/backpack) once bodyweight eccentric is easy",
+        bodyweight_only=False,
         source="Runners Connect / Galbraith & Lavallee 2009",
         minutes=5,
     ),
@@ -245,8 +246,49 @@ TIBIALIS_RAISE_TIERS = [
     StrengthMobilityItem(
         name="Tibialis raises (weighted, plate/dumbbell on foot)",
         protocol="3x12-15, slow eccentric, seated or wall-supported",
+        bodyweight_only=False,
         source="PNEUX tibialis anterior guide",
         minutes=5,
+    ),
+]
+
+# Quad eccentric tiers (added 05-08-2026, C4). The gap this fills was found by
+# reading the 2025 NYC marathon lap file: quads burning from mile 19, hamstring
+# fine at the finish, stride length down 12% while cadence rose. The routine at
+# that point trained shins and hamstring and nothing else -- no quad work at
+# all, in the one muscle group that actually failed. The athlete had avoided
+# hills all season protecting the hamstring, so the quads met 1,447 ft of
+# descent unadapted.
+#
+# Eccentric-biased throughout, because downhill running is an eccentric load:
+# the quad lengthens under tension to absorb each landing. Tempo and load are
+# the progression variable, matching the shin lifts above -- rep count is not.
+#
+# Hamstring-safe by the same standard as HAMSTRING_SAFE_ITEMS below: these are
+# knee-dominant, upright-torso movements with minimal hip flexion. Deep-hinge
+# patterns stay excluded for the same reason RDLs do.
+QUAD_ECCENTRIC_TIERS = [
+    StrengthMobilityItem(
+        name="Eccentric step-downs",
+        protocol="3x10/side from a low step (~15cm), 3s lowering, tap heel, drive back up",
+        source="Standard eccentric-loading practice for downhill tolerance "
+        "(convention, not a specific study)",
+        minutes=5,
+    ),
+    StrengthMobilityItem(
+        name="Split squats, slow eccentric",
+        protocol="3x10/side, 3s lowering, torso upright -- single-leg, which is how you run",
+        source="Standard eccentric-loading practice for downhill tolerance "
+        "(convention, not a specific study)",
+        minutes=6,
+    ),
+    StrengthMobilityItem(
+        name="Rear-foot-elevated split squats, weighted",
+        protocol="3x8/side, 3-4s lowering, add load once bodyweight is easy for all sets",
+        bodyweight_only=False,
+        source="Standard eccentric-loading practice for downhill tolerance "
+        "(convention, not a specific study)",
+        minutes=7,
     ),
 ]
 

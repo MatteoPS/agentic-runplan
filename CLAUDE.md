@@ -175,6 +175,39 @@ to hide behind: E3 says never soften the framing, so conditions are context
 for a question, never an excuse and never a substitute for the `HEAT` reason
 code when a session actually deviates.
 
+## Fuelling & quad work (added 05-08-2026)
+
+Both came out of reading the 2025 NYC marathon lap file, and both sit under
+**C4** — neither touches `plan.lock.json` or §6, and neither gates a session.
+
+`mc fuel "<session>"` gives the in-run carbohydrate plan for anything over 75
+min (~8 mi), and stays **silent** below that. `/daily` prints it verbatim as a
+**Fuelling** section on those days; `/week` states next week's target as a
+shopping note. It adds **no question** to `/daily`'s four.
+
+The 2025 race ran on ~**27 g/hr** — 5-6 gels over 4h49 — against a 60-90 g/hr
+need, and the legs emptied at mile 19 with HR and breathing unremarkable. The
+target therefore **ramps** (50 → 80 g/hr across the plan) rather than jumping
+to race rate: absorption is trainable and the gut is what's being trained.
+It holds flat through the Italy block — travel is the wrong place for a new GI
+stressor, the same reasoning as B7. Week 11's 20-miler is flagged as the
+**dress rehearsal**, because A4 freezes the taper and nothing new can be
+tested after it. Above 60 g/hr the product must be mixed glucose + fructose;
+one sugar saturates one transporter regardless of dose.
+
+The fixed strength session gained a **quad eccentric** lift on the same 3-tier
+schedule. Until then it trained shins and hamstring — the two tissues that
+hurt in *training* — and nothing of the one that failed in the *race*. Quads
+burned from mile 19 while the hamstring finished fine, after a season of
+avoiding hills to protect it. Eccentric-biased because downhill running is an
+eccentric load, and knee-dominant/upright so it stays hamstring-safe by the
+same standard as `HAMSTRING_SAFE_ITEMS`.
+
+Neither is medical advice (D6), and the weighted tier-3 items are now marked
+`bodyweight_only=False` — nothing consumes that flag for the fixed sessions
+yet, so **weeks 8-9 in Italy still surface weighted lifts under `no_gym`**.
+Swap them for the tier-1 bodyweight version by hand until that's wired up.
+
 ## §4 verdict vocabulary — fixed, never invent new labels
 
 `✅ good substitute` · `⚠️ aerobic only` · `❌ not recommended` ·

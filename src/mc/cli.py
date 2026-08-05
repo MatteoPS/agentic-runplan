@@ -11,6 +11,7 @@ from mc import digest as digest_mod
 from mc import drift as drift_mod
 from mc import equivalence as eq
 from mc import export as export_mod
+from mc import fuel as fuel_mod
 from mc import layout as layout_mod
 from mc import plan as plan_mod
 from mc import planning as planning_mod
@@ -292,6 +293,34 @@ def equiv(session: str = typer.Argument(..., help='e.g. "8 mi easy"')):
     console.print(table)
     for o in options:
         console.print(f"  {o.option}: lost — {o.lost}")
+
+
+@app.command()
+def fuel(
+    session: str = typer.Argument(..., help='e.g. "16 mi long"'),
+    week_num: int = typer.Option(None, "--week", help="Plan week, defaults to today's"),
+):
+    """In-run carbohydrate plan for a long session. Silent for short ones."""
+    parsed = eq.parse_session(session)
+    if week_num is None:
+        week_num = _current_week(plan_mod.load_plan()).week
+
+    plan = fuel_mod.build_plan(parsed.distance_mi, week_num)
+    if plan is None:
+        console.print(
+            f"{parsed.distance_mi:g} mi is under "
+            f"{fuel_mod.MIN_FUEL_DURATION_MIN:.0f} min — no in-run fuelling needed."
+        )
+        return
+
+    console.print(f"[bold]Fuelling — {session}, week {week_num}[/bold]")
+    console.print(plan.summary)
+    for line in fuel_mod.plan_lines(plan):
+        console.print(f"  {line}")
+    console.print(
+        "  [dim]Descriptive, not a §6 rule (D6). The gut adapts to this the way "
+        "legs adapt to mileage — ramp it.[/dim]"
+    )
 
 
 def _parse_day_miles(spec: str) -> dict[str, float]:

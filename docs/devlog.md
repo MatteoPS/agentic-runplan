@@ -10,6 +10,58 @@ changed; this says what we learned.
 
 ---
 
+## 05-08-2026 — Fuelling, and the muscle group nobody was training
+
+Second half of the NYC-marathon post-mortem. Where the stride-length work below
+fixed the *measurement*, this fixes two things the measurement pointed at.
+
+**Fuelling wasn't tracked anywhere.** Reconstructing what was actually eaten in
+the 2025 race — 5-6 gels over 4h49 — gives about **27 g of carbohydrate per
+hour** against a 60-90 g/hr need. That makes the most likely single cause of a
+17-minute positive split the one variable the system never recorded. A measured
+long run on 05-08-2026 came in at 43 g/hr: better, still short.
+
+New `mc fuel`, silent under 75 min so it doesn't fire on every easy day.
+
+The design decision worth recording is the **ramp**. The obvious implementation
+is a constant race target, and it's wrong: absorption is trainable, and going
+from 43 g/hr to race rate overnight produces GI distress rather than
+adaptation. So the target climbs 50 → 80 g/hr across the plan, holds flat
+through the Italy block (travel is the wrong place for a new GI stressor —
+B7's reasoning), and peaks at week 11. Week 11 is flagged explicitly as the
+dress rehearsal because **A4 freezes the taper**: it is the last long run that
+can test anything.
+
+One thing caught by checking the arithmetic instead of trusting it. Rounding
+the gel interval to something a runner will actually follow (nearest 5 min)
+means the schedule under-delivers the stated total — 9 gels at 20 min is 225 g
+against a 260 g target. Rather than hide the gap or quote an unfollowable
+17-minute interval, the plan now names the shortfall and assigns it to drink
+mix, which is the realistic strategy anyway. A test asserts the two halves sum
+to the total, so the digest can't print a number the schedule beneath it
+doesn't deliver.
+
+**The strength routine had no quad work.** It trained calves, tibialis and
+glutes: the shins and the hamstring, which are the two tissues that hurt in
+*training*. The race failed at neither — quads burned from mile 19, hamstring
+was fine at the finish, after a season of avoiding hills specifically to
+protect the hamstring. So the quads met 1,447 ft of descent unadapted.
+
+`QUAD_ECCENTRIC_TIERS` added on the existing 3-tier / 3-weeks-per-tier
+structure, eccentric-biased because that's what downhill running is, and
+knee-dominant with an upright torso so it stays hamstring-safe by the same
+standard the module already applies to excluding RDLs.
+
+Noticed while doing it: `bodyweight_only` is declared on `StrengthMobilityItem`
+and consumed by nothing except `propose_strength_mobility`. The weighted tier-3
+lifts are therefore still offered during the Italy block, which is `no_gym`.
+The flag is now set truthfully on all three weighted items, but the fixed
+session doesn't read it — flagged in `CLAUDE.md` as a manual swap rather than
+silently fixed, since it's a pre-existing behaviour change and not what this
+piece of work was for.
+
+---
+
 ## 05-08-2026 — Stride length, because cadence missed the one run that mattered
 
 Prompted by reviewing the lap file from the 2025 NYC marathon (02-11-2025,

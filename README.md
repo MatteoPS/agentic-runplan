@@ -59,6 +59,11 @@ normal single-repo project. See [Private state](#private-state-optional).
   which. And cadence alone isn't enough — in the 2025 NYC marathon that fed
   this design, cadence *rose* over the closing miles while stride length fell
   10%, so the two are tracked separately and the digest says which one moved.
+- **Trains the gut like it trains the legs.** Long runs get an in-run
+  carbohydrate plan (`mc fuel`) — grams per hour, a gel interval in minutes,
+  and what has to come from drink mix instead. The target *ramps* across the
+  plan rather than sitting at race rate, because absorption is trainable and
+  jumping straight there buys GI distress. It stays silent under 75 minutes.
 - **Asks instead of assuming when something looks off.** Every run is tagged
   with the dew point it actually happened in, so a slow one gets a question
   ("was it hot, was it meant to be easy, did something hurt?") rather than a

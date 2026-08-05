@@ -30,6 +30,11 @@ Produce a review covering:
 4. **Run-days trend.** Actual running days/week over the last 3-4 weeks
    against the shin-adaptation budget (4 most weeks, 5 in peak weeks).
 
+   Also run `mc fuel "<next week's long run>"` and state this week's carb
+   target in one line, so there's time to buy what it needs before the day.
+   `/daily` prints the full plan; here it's a shopping note. The target ramps
+   week to week on purpose — say the number, not "keep fuelling".
+
 5. **Next week's layout.** Pull next week's targets from `plan.lock.json`
    (`mc week --week N+1`) and lay out a sensible day-of-week structure,
    respecting B1-B9 (Saturday-pace/Sunday-long pairing where it fits, ≥48h

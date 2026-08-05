@@ -132,6 +132,15 @@ Usual slot: <time>. <forecast note if relevant> → <action>
 
 Lost if substituted: <from equiv output>. Substitutions used this week: X/Y.
 
+## Fuelling
+<Only when `mc fuel "<today's session>"` returns a plan — it stays silent for
+anything under 75 min, so omit this whole heading on those days. Print its
+bullets verbatim, not freehanded. This is gut training: the 2025 NYC marathon
+ran on ~27 g/hr and the legs emptied at mile 19, so the target ramps across
+the plan rather than jumping to race rate. Ask what was actually taken and how
+the stomach handled it in the next day's log — but this adds **no question**
+to the four; fold it into the existing "anything changing" one or leave it.>
+
 ## Strength & mobility (N min)
 <If today is one of this week's `mc strength` fixed days: "**Fixed session
 X/2 this week — after today's run.**" followed by that command's tiered
