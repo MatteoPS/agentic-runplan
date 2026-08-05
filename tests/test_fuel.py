@@ -75,3 +75,19 @@ def test_intervals_are_round_numbers_a_runner_can_follow():
     for week in fuel.FUEL_RAMP_G_PER_HR:
         plan = fuel.build_plan(16.0, week_num=week)
         assert plan.gel_every_min % 5 == 0
+
+
+def test_hydration_and_carbohydrate_are_reported_as_separate_jobs():
+    """An electrolyte tab is ~11 g carb: an hour's sodium, half a gel of fuel.
+    Conflating the two is how 27 g/hr gets mistaken for enough."""
+    lines = " ".join(fuel.plan_lines(fuel.build_plan(16.0, week_num=5)))
+    assert "Fluid & sodium" in lines
+    assert "hydration, not fuel" in lines
+    assert str(fuel.ELECTROLYTE_TAB_SODIUM_MG) in lines
+
+
+def test_gels_and_drink_have_different_timing():
+    """A gel is a bolus and waits; drink carbs are sipped from the start."""
+    lines = " ".join(fuel.plan_lines(fuel.build_plan(20.0, week_num=11)))
+    assert "first at 35 min" in lines
+    assert "continuously from the start" in lines

@@ -21,6 +21,15 @@ step rather than of race day.
 25 g, both around 100 kcal. Close enough that one interval covers both, and
 quoting the interval in minutes is what actually gets followed mid-run.
 
+**Carbohydrate and hydration are two jobs, not one.** Confirmed 05-08-2026
+that the 12.5mi long run carried a Liquid I.V. stick in 500 ml — which is an
+electrolyte product at ~11 g carbohydrate, so it did the sodium job and
+contributed about half a gel toward the carbohydrate one. Keeping the two
+lines separate is what stops an hour's sodium from being mistaken for an
+hour's fuel. Note also that the two have different *timing*: a gel is a bolus
+and waits for `FIRST_GEL_AT_MIN`, while drink carbohydrate is sipped
+continuously from the start.
+
 **Above ~60 g/hr the source matters.** A single sugar saturates one intestinal
 transporter (SGLT1) at roughly that rate no matter how much is swallowed;
 past it, products need mixed glucose and fructose to recruit a second one.
@@ -45,6 +54,20 @@ MIN_FUEL_DURATION_MIN = 75.0
 
 # Carbohydrate per gel, in grams. Maurten Gel 100 is 25 g; GU is 22 g.
 GRAMS_PER_GEL = 25.0
+
+# An electrolyte tab is **not** a fuel product, and conflating the two is the
+# easy mistake here: a Liquid I.V. stick is ~11 g carbohydrate and ~500 mg
+# sodium, so it covers most of an hour's sodium and about half a gel's carbs.
+# Carried as a constant so the digest can say what a stick is actually worth
+# rather than leaving it to be assumed either way.
+ELECTROLYTE_TAB_CARB_G = 11
+ELECTROLYTE_TAB_SODIUM_MG = 500
+
+# Fluid and sodium are a separate job from carbohydrate and are ranges, not
+# targets: both depend on sweat rate, which this system does not measure. Wide
+# on purpose, and stated as something to test rather than to hit.
+FLUID_ML_PER_HR = (400, 800)
+SODIUM_MG_PER_HR = (300, 600)
 
 # Don't start the clock at the gun -- the first 30-40 minutes run on what was
 # eaten beforehand, and an early gel is one more chance for the stomach to
@@ -159,24 +182,36 @@ def plan_lines(plan: FuelPlan | None) -> list[str]:
         return []
 
     lines = [
-        f"- **Target: {plan.target_g_per_hr} g/hr** — {plan.total_grams} g over "
-        f"~{plan.duration_min / 60:.1f} h.",
+        f"**Carbohydrate — {plan.target_g_per_hr} g/hr, {plan.total_grams} g over "
+        f"~{plan.duration_min / 60:.1f} h.**",
         f"- One ~100 kcal gel (GU 22 g / Maurten 25 g) **every "
-        f"{plan.gel_every_min} min**, first at {FIRST_GEL_AT_MIN:.0f} min. "
-        f"About {plan.n_gels} in total ({plan.grams_from_gels} g).",
+        f"{plan.gel_every_min} min, first at {FIRST_GEL_AT_MIN:.0f} min** — a gel "
+        f"is a bolus, so the opening half hour runs on breakfast. About "
+        f"{plan.n_gels} in total ({plan.grams_from_gels} g).",
     ]
     if plan.grams_from_drink:
         lines.append(
-            f"- That leaves **~{plan.grams_from_drink} g to come from drink mix** — "
-            f"gels on a followable interval don't reach the target on their own, "
-            f"and carrying that many more isn't the answer."
+            f"- The remaining **~{plan.grams_from_drink} g from carbohydrate drink "
+            f"mix** (Maurten Drink Mix, SIS Beta Fuel, Precision Fuel, Tailwind, "
+            f"Skratch) — **sipped continuously from the start**, unlike the gels. "
+            f"Gels on a followable interval don't reach the target alone, and "
+            f"carrying more of them isn't the answer."
         )
     else:
         lines.append(
-            "- Carbohydrate in the bottle counts toward the same number and is "
-            "easier on the stomach than another gel."
+            "- Carbohydrate drink mix counts toward the same number, sipped from "
+            "the start, and is easier on the stomach than another gel."
         )
     lines += [
+        "**Fluid & sodium — a separate job from the number above.**",
+        f"- {FLUID_ML_PER_HR[0]}-{FLUID_ML_PER_HR[1]} ml/hr and "
+        f"{SODIUM_MG_PER_HR[0]}-{SODIUM_MG_PER_HR[1]} mg sodium/hr — wide ranges, "
+        f"because sweat rate isn't measured here. Toward the top in heat and at a "
+        f"high dew point.",
+        f"- **An electrolyte tab is hydration, not fuel.** A Liquid I.V. stick is "
+        f"~{ELECTROLYTE_TAB_CARB_G} g carbohydrate and ~{ELECTROLYTE_TAB_SODIUM_MG} "
+        f"mg sodium: most of an hour's sodium, and about half a gel. It counts "
+        f"toward the sodium line, not the carbohydrate one.",
         "- Eat 2-3 h beforehand, not 20 min. Log what you actually took and how "
         "the stomach handled it — that's the point of doing it now.",
     ]

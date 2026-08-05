@@ -203,10 +203,23 @@ avoiding hills to protect it. Eccentric-biased because downhill running is an
 eccentric load, and knee-dominant/upright so it stays hamstring-safe by the
 same standard as `HAMSTRING_SAFE_ITEMS`.
 
-Neither is medical advice (D6), and the weighted tier-3 items are now marked
-`bodyweight_only=False` — nothing consumes that flag for the fixed sessions
-yet, so **weeks 8-9 in Italy still surface weighted lifts under `no_gym`**.
-Swap them for the tier-1 bodyweight version by hand until that's wired up.
+**Carbohydrate and hydration are two separate lines, never merged.** An
+electrolyte tab (Liquid I.V. ≈ 11 g carb, 500 mg sodium) is most of an hour's
+sodium and about half a gel — it counts toward fluid/sodium, not toward the
+g/hr target. They also differ in *timing*: a gel is a bolus and waits until 35
+min, drink-mix carbohydrate is sipped continuously from the start. Fluid
+(400-800 ml/hr) and sodium (300-600 mg/hr) are printed as **ranges**, because
+sweat rate isn't measured here.
+
+**Weights during Italy: keep the weighted default, downgrade on request.**
+`mc strength ... --bodyweight` swaps each lift for the hardest equipment-free
+variant — a step down one tier, not to tier 1. Deliberately **opt-in and not
+inferred from `no_gym`**: weights are often findable while travelling
+(confirmed 05-08-2026), and deriving it from the block would downgrade every
+Italy day including the ones with a gym. Tell me the gym is a bust and I'll
+pass the flag.
+
+Neither is medical advice (D6).
 
 ## §4 verdict vocabulary — fixed, never invent new labels
 

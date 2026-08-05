@@ -32,19 +32,47 @@ def tier_for_week(week_num: int) -> int:
     return min((max(week_num, 1) - 1) // WEEKS_PER_TIER, len(CALF_RAISE_TIERS) - 1)
 
 
-def items_for_week(week_num: int) -> list[StrengthMobilityItem]:
+def _highest_bodyweight_tier(tiers: list[StrengthMobilityItem], tier: int) -> StrengthMobilityItem:
+    """The hardest bodyweight variant at or below `tier`.
+
+    Stepping down a tier is a real loss of stimulus, so this takes the highest
+    one that still needs no equipment rather than dropping to tier 1.
+    """
+    for candidate in range(tier, -1, -1):
+        if tiers[candidate].bodyweight_only:
+            return tiers[candidate]
+    return tiers[0]
+
+
+def items_for_week(week_num: int, *, bodyweight_only: bool = False) -> list[StrengthMobilityItem]:
     """Shins, quads, hamstring — in that order, all three tiered together.
 
     The quad lift joined on 05-08-2026 (C4). Until then the session trained the
     two tissues that had hurt in training and none of the one that failed in
     the race; see `QUAD_ECCENTRIC_TIERS` for the full reasoning.
+
+    `bodyweight_only` is **opt-in, not inferred from the block.** The Italy
+    weeks carry `no_gym`, but confirmed 05-08-2026 that weights are often
+    findable while travelling and it depends on the day. Deriving this from the
+    plan would silently downgrade the session on every Italy day including the
+    ones with a gym; asking for it on the day that needs it keeps the default
+    honest. Nothing else reads the flag, so the tier schedule is unaffected.
     """
     tier = tier_for_week(week_num)
-    return [
+    picks = [
         CALF_RAISE_TIERS[tier],
         TIBIALIS_RAISE_TIERS[tier],
         QUAD_ECCENTRIC_TIERS[tier],
         HAMSTRING_SAFE_ITEMS[0],
+    ]
+    if not bodyweight_only:
+        return picks
+    return [
+        _highest_bodyweight_tier(tiers, tier) if tiers else item
+        for item, tiers in zip(
+            picks,
+            [CALF_RAISE_TIERS, TIBIALIS_RAISE_TIERS, QUAD_ECCENTRIC_TIERS, None],
+        )
     ]
 
 

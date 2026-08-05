@@ -120,3 +120,22 @@ def test_format_shin_check_prompt_includes_all_levels():
     prompt = strength.format_shin_check_prompt()
     for n in range(4):
         assert f"{n} =" in prompt
+
+
+def test_bodyweight_swap_steps_down_one_tier_not_all_the_way():
+    """Weights aren't always findable while travelling (confirmed 05-08-2026),
+    so this takes the hardest equipment-free variant rather than tier 1."""
+    from mc import strength
+
+    full = strength.items_for_week(8)  # tier 3, weighted
+    swapped = strength.items_for_week(8, bodyweight_only=True)
+    assert any(not i.bodyweight_only for i in full)
+    assert all(i.bodyweight_only for i in swapped)
+    assert "slow eccentric" in swapped[0].name  # tier 2, not tier 1
+    assert len(swapped) == len(full)
+
+
+def test_bodyweight_swap_is_a_noop_at_lower_tiers():
+    from mc import strength
+
+    assert strength.items_for_week(2) == strength.items_for_week(2, bodyweight_only=True)

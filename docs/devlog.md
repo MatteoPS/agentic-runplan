@@ -53,12 +53,33 @@ knee-dominant with an upright torso so it stays hamstring-safe by the same
 standard the module already applies to excluding RDLs.
 
 Noticed while doing it: `bodyweight_only` is declared on `StrengthMobilityItem`
-and consumed by nothing except `propose_strength_mobility`. The weighted tier-3
-lifts are therefore still offered during the Italy block, which is `no_gym`.
-The flag is now set truthfully on all three weighted items, but the fixed
-session doesn't read it — flagged in `CLAUDE.md` as a manual swap rather than
-silently fixed, since it's a pre-existing behaviour change and not what this
-piece of work was for.
+and consumed by nothing except `propose_strength_mobility`, so the weighted
+tier-3 lifts are still offered during the `no_gym` Italy block. Flagged rather
+than silently fixed — and that turned out to be the right call, because the
+obvious fix was wrong.
+
+**Follow-up the same day, on two points of feedback.**
+
+*The Italy fix should not be automatic.* Deriving `bodyweight_only` from the
+block's `no_gym` flag was the tempting implementation. But weights are often
+findable while travelling and it varies by day, so inferring it would downgrade
+every Italy session including the ones with a gym — trading a rare wrong answer
+for a frequent one. `mc strength --bodyweight` is therefore opt-in, and takes
+the *hardest equipment-free variant* (one tier down, not tier 1) since a step
+down is a real loss of stimulus.
+
+*Carbohydrate and hydration were merged and shouldn't have been.* The first
+cut told the athlete to "carry fluid with carbohydrate in it", which papers
+over the distinction that matters: a Liquid I.V. stick is ~11 g carbohydrate
+and ~500 mg sodium, so it is most of an hour's sodium and about half a gel.
+Counted as fuel it flatters the number; counted as nothing it loses the sodium.
+They are now two labelled lines with their own units, and fluid/sodium are
+stated as ranges because sweat rate isn't measured anywhere in this system.
+
+The same split fixed a timing error. `FIRST_GEL_AT_MIN` is correct for gels —
+a bolus the stomach has to handle — but wrong for drink mix, which is sipped
+continuously from the start. The original text implied the 35-minute wait
+applied to both.
 
 ---
 

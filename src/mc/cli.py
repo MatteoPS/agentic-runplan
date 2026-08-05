@@ -562,6 +562,11 @@ def strength(
         help='With "--confirm DD-MM:missed": remaining days to reschedule into, '
         'e.g. "31-07:0,01-08:2,02-08:10" (DD-MM:planned_miles)',
     ),
+    bodyweight: bool = typer.Option(
+        False,
+        "--bodyweight",
+        help="No weights available today — swap to the hardest equipment-free variant",
+    ),
 ):
     """Fixed strength day(s), this week's progression tier, and day-after
     confirm/reschedule. Days are chosen once per week and persisted --
@@ -602,9 +607,14 @@ def strength(
         days = strength_mod.get_fixed_days(week_start)
 
     tier = strength_mod.tier_for_week(week_num)
-    items = strength_mod.items_for_week(week_num)
+    items = strength_mod.items_for_week(week_num, bodyweight_only=bodyweight)
 
     console.print(f"Week {week_num} (w/c {week_start}) — tier {tier + 1}/3")
+    if bodyweight:
+        console.print(
+            "[yellow]Bodyweight only — hardest equipment-free variant of each. "
+            "A step down in stimulus, not a rest day.[/yellow]"
+        )
     if days:
         console.print(f"Fixed strength days: {', '.join(days)} (after that day's run)")
     else:
