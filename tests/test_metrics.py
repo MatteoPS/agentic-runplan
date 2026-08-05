@@ -286,25 +286,45 @@ def test_no_pace_note_without_a_baseline():
     assert metrics.pace_note(metrics.build_run_metrics(activity()), None) is None
 
 
-# --- within-run cadence decay ----------------------------------------------------------
+# --- within-run decay ------------------------------------------------------------------
 
 
-def details_payload(cadences, distance_total=16093.44):
+def details_payload(
+    cadences,
+    distance_total=16093.44,
+    strides=None,
+    speeds=None,
+    gap_speeds=None,
+):
     """Shaped like a real get_activity_details response, whose metric indices
-    genuinely vary between activities — hence the key lookup."""
+    genuinely vary between activities — hence the key lookup.
+
+    `strides` are centimetres and `speeds`/`gap_speeds` m/s, matching what
+    Garmin actually writes. Passing none of them models an older cached payload
+    that predates those streams.
+    """
     n = len(cadences)
-    return {
-        "data": {
-            "metricDescriptors": [
-                {"key": "directHeartRate", "metricsIndex": 0},
-                {"key": "sumDistance", "metricsIndex": 1},
-                {"key": "directDoubleCadence", "metricsIndex": 2},
-            ],
-            "activityDetailMetrics": [
-                {"metrics": [140.0, distance_total * i / n, c]} for i, c in enumerate(cadences)
-            ],
-        }
+    optional = {
+        "directStrideLength": strides,
+        "directSpeed": speeds,
+        "directGradeAdjustedSpeed": gap_speeds,
     }
+    descriptors = [
+        {"key": "directHeartRate", "metricsIndex": 0},
+        {"key": "sumDistance", "metricsIndex": 1},
+        {"key": "directDoubleCadence", "metricsIndex": 2},
+    ]
+    present = [(key, values) for key, values in optional.items() if values is not None]
+    for offset, (key, _) in enumerate(present):
+        descriptors.append({"key": key, "metricsIndex": 3 + offset})
+
+    rows = []
+    for i, cadence in enumerate(cadences):
+        row = [140.0, distance_total * i / n, cadence]
+        row += [values[i] for _, values in present]
+        rows.append({"metrics": row})
+
+    return {"data": {"metricDescriptors": descriptors, "activityDetailMetrics": rows}}
 
 
 @pytest.fixture
@@ -321,32 +341,32 @@ def write_details(details_dir, activity_id, cadences, **kw):
 
 def test_splits_are_taken_by_distance_not_sample_count(details_dir):
     write_details(details_dir, "1", [170.0] * 60 + [160.0] * 60)
-    splits = metrics.cadence_splits("1")
-    assert splits.first == 170.0
-    assert splits.last == 160.0
+    splits = metrics.run_splits("1")
+    assert splits.cadence.first == 170.0
+    assert splits.cadence.last == 160.0
     assert splits.drift_spm == -10.0
 
 
 def test_stopped_samples_are_excluded(details_dir):
     """Cadence 0 is a traffic light, not a stride."""
     write_details(details_dir, "1", [170.0] * 60 + [0.0] * 30 + [170.0] * 60)
-    assert metrics.cadence_splits("1").drift_spm == 0.0
+    assert metrics.run_splits("1").drift_spm == 0.0
 
 
 def test_missing_details_file_is_not_an_error():
-    assert metrics.cadence_splits("nope") is None
-    assert metrics.cadence_splits(None) is None
+    assert metrics.run_splits("nope") is None
+    assert metrics.run_splits(None) is None
 
 
 def test_too_few_samples_to_split(details_dir):
     write_details(details_dir, "1", [170.0] * 10)
-    assert metrics.cadence_splits("1") is None
+    assert metrics.run_splits("1") is None
 
 
 def test_decay_note_needs_a_long_enough_run(details_dir):
     """'Did form hold up late' isn't a question a 2-miler asks."""
     write_details(details_dir, "1", [175.0] * 60 + [160.0] * 60)
-    splits = metrics.cadence_splits("1")
+    splits = metrics.run_splits("1")
     short = metrics.build_run_metrics(activity(distance=3218.0))  # 2 mi
     long = metrics.build_run_metrics(activity(distance=16093.44))  # 10 mi
     assert metrics.decay_note(short, splits) is None
@@ -356,11 +376,155 @@ def test_decay_note_needs_a_long_enough_run(details_dir):
 def test_no_decay_note_when_cadence_holds(details_dir):
     write_details(details_dir, "1", [167.0] * 60 + [165.0] * 60)
     long = metrics.build_run_metrics(activity(distance=16093.44))
-    assert metrics.decay_note(long, metrics.cadence_splits("1")) is None
+    assert metrics.decay_note(long, metrics.run_splits("1")) is None
 
 
 def test_decay_note_refuses_to_diagnose(details_dir):
     write_details(details_dir, "1", [175.0] * 60 + [160.0] * 60)
     long = metrics.build_run_metrics(activity(distance=16093.44))
-    note = metrics.decay_note(long, metrics.cadence_splits("1"))
-    assert "a number, not a finding" in note
+    note = metrics.decay_note(long, metrics.run_splits("1"))
+    assert "numbers, not a finding" in note
+
+
+def test_stride_and_gap_thirds_are_read_from_the_same_payload(details_dir):
+    """Both streams ship alongside cadence — reading them costs no API call."""
+    write_details(
+        details_dir,
+        "1",
+        [165.0] * 120,
+        strides=[100.0] * 60 + [90.0] * 60,  # cm
+        speeds=[2.75] * 60 + [2.50] * 60,  # m/s
+        gap_speeds=[2.80] * 60 + [2.55] * 60,
+    )
+    splits = metrics.run_splits("1")
+    assert splits.stride.first == 1.0
+    assert splits.stride.last == 0.9
+    assert splits.stride_drift_pct == -10.0
+    # 2.80 m/s ≈ 9:35/mi, 2.55 m/s ≈ 10:31/mi — a ~56 s/mi grade-adjusted fade.
+    assert splits.gap_drift_sec == pytest.approx(56, abs=1)
+    assert splits.pace.first < splits.pace.last  # raw pace slowed too
+
+
+def test_stride_collapse_is_caught_when_cadence_holds(details_dir):
+    """The 2025 NYC marathon case: cadence rose while stride fell 10%.
+
+    A cadence-only check reported nothing about the run most worth asking
+    about, which is the whole reason stride length is read here.
+    """
+    write_details(
+        details_dir,
+        "1",
+        [160.0] * 60 + [166.0] * 60,  # cadence *rose*
+        strides=[97.0] * 60 + [85.0] * 60,
+    )
+    splits = metrics.run_splits("1")
+    assert splits.drift_spm == 6.0  # cadence alone would say all is well
+    long = metrics.build_run_metrics(activity(distance=16093.44))
+    note = metrics.decay_note(long, splits)
+    assert note is not None
+    assert "stride" in note
+
+
+def test_gap_decay_alone_does_not_fire_the_note(details_dir):
+    """A warmup and a cooldown live in the first and last thirds, so pace fade
+    is real often enough to report and spurious often enough not to trigger."""
+    write_details(
+        details_dir,
+        "1",
+        [165.0] * 120,
+        strides=[100.0] * 120,
+        gap_speeds=[2.80] * 60 + [2.55] * 60,
+    )
+    long = metrics.build_run_metrics(activity(distance=16093.44))
+    assert metrics.decay_note(long, metrics.run_splits("1")) is None
+
+
+def test_gap_rides_along_as_context_when_stride_trips(details_dir):
+    write_details(
+        details_dir,
+        "1",
+        [165.0] * 120,
+        strides=[100.0] * 60 + [90.0] * 60,
+        speeds=[2.75] * 60 + [2.40] * 60,
+        gap_speeds=[2.80] * 60 + [2.55] * 60,
+    )
+    long = metrics.build_run_metrics(activity(distance=16093.44))
+    note = metrics.decay_note(long, metrics.run_splits("1"))
+    assert "grade-adjusted pace" in note
+    assert "terrain" in note
+
+
+def test_terrain_cost_separates_uphill_from_slower(details_dir):
+    """Last third raw-vs-GAP wide open: that stretch was uphill, not a fade."""
+    write_details(
+        details_dir,
+        "1",
+        [165.0] * 120,
+        speeds=[2.75] * 60 + [2.40] * 60,  # raw slowed
+        gap_speeds=[2.78] * 60 + [2.76] * 60,  # grade-adjusted barely moved
+    )
+    splits = metrics.run_splits("1")
+    assert splits.terrain_cost_sec_per_mi("first") == pytest.approx(4, abs=2)
+    assert splits.terrain_cost_sec_per_mi("last") == pytest.approx(87, abs=2)
+    assert abs(splits.gap_drift_sec) < 5  # no fade once the hill is accounted for
+
+
+def test_no_decay_note_when_all_three_hold(details_dir):
+    write_details(
+        details_dir,
+        "1",
+        [167.0] * 60 + [165.0] * 60,
+        strides=[100.0] * 60 + [99.0] * 60,
+        gap_speeds=[2.80] * 60 + [2.78] * 60,
+    )
+    long = metrics.build_run_metrics(activity(distance=16093.44))
+    assert metrics.decay_note(long, metrics.run_splits("1")) is None
+
+
+def test_pattern_gloss_names_which_of_the_two_fell(details_dir):
+    """Cadence easing with stride intact is a cooldown; the reverse is not."""
+    long = metrics.build_run_metrics(activity(distance=16093.44))
+
+    write_details(
+        details_dir, "1", [160.0] * 60 + [166.0] * 60, strides=[97.0] * 60 + [85.0] * 60
+    )
+    assert "Stride shortened while cadence held" in metrics.decay_note(
+        long, metrics.run_splits("1")
+    )
+
+    write_details(
+        details_dir, "2", [174.0] * 60 + [166.0] * 60, strides=[100.0] * 60 + [106.0] * 60
+    )
+    assert "looks more like backing off or a cooldown" in metrics.decay_note(
+        long, metrics.run_splits("2")
+    )
+
+    write_details(
+        details_dir, "3", [174.0] * 60 + [164.0] * 60, strides=[100.0] * 60 + [90.0] * 60
+    )
+    assert "Both fell" in metrics.decay_note(long, metrics.run_splits("3"))
+
+
+def test_older_payloads_without_the_new_streams_still_work(details_dir):
+    """Cached details predating these streams degrade to cadence only."""
+    write_details(details_dir, "1", [175.0] * 60 + [160.0] * 60)
+    splits = metrics.run_splits("1")
+    assert splits.stride.first is None
+    assert splits.stride_drift_pct is None
+    assert splits.gap_drift_sec is None
+    long = metrics.build_run_metrics(activity(distance=16093.44))
+    note = metrics.decay_note(long, splits)
+    assert "cadence" in note
+    assert "stride" not in note
+
+
+def test_stopped_samples_do_not_become_absurd_paces(details_dir):
+    """A red light is 0 m/s; a median of paces would let it dominate."""
+    write_details(
+        details_dir,
+        "1",
+        [165.0] * 120,
+        speeds=[2.75] * 50 + [0.0] * 10 + [2.75] * 60,
+    )
+    splits = metrics.run_splits("1")
+    assert splits.pace.first == pytest.approx(splits.pace.last, abs=0.01)

@@ -489,7 +489,7 @@ def render_markdown(as_of: date) -> str:
     # Only the runs long enough for thirds to mean anything — every one of
     # these reads a detail payload already on disk, so this costs no API calls.
     splits = {
-        r.activity_id: metrics.cadence_splits(r.activity_id)
+        r.activity_id: metrics.run_splits(r.activity_id)
         for r in form_rows
         if r.activity_id and (r.distance_mi or 0) >= metrics.MIN_DECAY_DISTANCE_MI
     }

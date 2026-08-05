@@ -52,10 +52,13 @@ normal single-repo project. See [Private state](#private-state-optional).
   your most recent GPS activity, so it follows you when you travel.
 - **Reads the metrics your watch already recorded and nobody looked at** —
   cadence, elevation gain, grade-adjusted vs. raw pace, and for longer runs
-  whether cadence *held* from the first third to the last. All of it parsed
-  from data already on disk: **zero extra API calls**. A 166 spm average over
-  10 miles is equally consistent with holding 166 and with running 172 then
-  160; only the split can tell you which.
+  whether cadence, *stride length* and grade-adjusted pace held from the first
+  third to the last. All of it parsed from data already on disk: **zero extra
+  API calls**. A 166 spm average over 10 miles is equally consistent with
+  holding 166 and with running 172 then 160; only the split can tell you
+  which. And cadence alone isn't enough — in the 2025 NYC marathon that fed
+  this design, cadence *rose* over the closing miles while stride length fell
+  10%, so the two are tracked separately and the digest says which one moved.
 - **Asks instead of assuming when something looks off.** Every run is tagged
   with the dew point it actually happened in, so a slow one gets a question
   ("was it hot, was it meant to be easy, did something hurt?") rather than a

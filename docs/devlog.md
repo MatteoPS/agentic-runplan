@@ -10,6 +10,53 @@ changed; this says what we learned.
 
 ---
 
+## 05-08-2026 — Stride length, because cadence missed the one run that mattered
+
+Prompted by reviewing the lap file from the 2025 NYC marathon (02-11-2025,
+4:48:58) for lessons for this year's build. The result was a direct critique of
+code written the day before.
+
+The race was a 17-minute positive split: 10:22/mi for the first half, 11:25/mi
+for the second. Grade-adjusted pace ruled the bridges out as the cause — the
+Queensboro climb ran at first-half effort, and the damage was on flat ground at
+miles 19-21. What actually collapsed was **stride length**, 0.966m → 0.845m.
+Cadence *rose*: 160 spm through Brooklyn, 166-169 over the final three miles.
+
+Which means the within-run decay check built the previous day, keyed on cadence
+alone, would have reported **nothing** about the most instructive run in this
+athlete's history. Cadence measures turnover; a tiring runner gives up ground
+per step first. `metrics.py`'s own docstring had listed `avgStrideLength` under
+"deliberately not here — no §6 rule reads them, available the day there's a
+question that needs them". That day arrived.
+
+`CadenceSplits` became `RunSplits`, carrying cadence, stride length, raw pace
+and grade-adjusted pace as thirds. `directStrideLength` and
+`directGradeAdjustedSpeed` were already in the same cached detail payload, so
+this stayed at zero extra API calls.
+
+**Two things that turned out to be wrong along the way:**
+
+*Grade-adjusted pace was implemented as a trigger and had to be demoted.* At a
+20 s/mi threshold it fired on 10 of 15 real runs. Checking the cache showed why:
+a warmup and a cooldown live in the first and last thirds, so a structured run
+reads as a collapse — 23369959611 goes 9:01 → 7:28 → 10:06, which is a workout.
+Every other threshold in this module errs toward saying nothing; pace decay is
+the one metric that would err the other way, so it is now reported as context
+beside a cadence or stride trip and never triggers alone. Per-third raw-vs-GAP
+terrain cost is printed with it, so "that stretch was uphill" stays separable
+from "that stretch was slower".
+
+*The closing sentence asserted a pattern it hadn't checked.* It read "stride
+falling while cadence holds is legs, not turnover" on runs where stride had
+*risen*. Fixed by naming the actual pattern: cadence easing with stride intact
+is what backing off or a cooldown looks like; stride shortening with cadence
+held is legs. Still descriptive, never a verdict (§6 D6).
+
+Worth recording: across the whole cached history, every 5mi+ run shows the
+benign cooldown shape. None shows the marathon pattern.
+
+---
+
 ## 04-08-2026 — Ambient weather, and the Garmin fields we were throwing away
 
 `34f9a21`, `c27a22a`
