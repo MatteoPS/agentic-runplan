@@ -108,7 +108,7 @@ def test_long_runs_outgrow_the_belt():
     assert not plan.liquid_only_is_enough
     assert plan.gel_gap_g > 0
     assert plan.carbs_from_bottles + plan.gel_gap_g == plan.total_grams
-    assert "gels)** to carry" in " ".join(fuel.plan_lines(plan))
+    assert "of gels minimum" in " ".join(fuel.plan_lines(plan))
 
 
 def test_shorter_long_runs_can_go_liquid_only():
@@ -123,3 +123,21 @@ def test_refills_count_stops_not_bottlefuls():
     mid = sum(fuel.FLUID_ML_PER_HR) / 2
     needed = mid * plan.duration_min / 60
     assert plan.refills == int(-(-needed // fuel.BELT_CAPACITY_ML)) - 1
+
+
+def test_gels_are_the_default_even_when_liquid_could_cover_it():
+    """Specificity, not preference: race day is gel-dominant because 500 ml
+    can't fuel four hours, so a bolus every 20 min is what the gut must
+    tolerate. Training mostly on sipped carbs adapts it to the wrong pattern."""
+    plan = fuel.build_plan(9.0, week_num=3)
+    assert plan.liquid_only_is_enough  # it could
+    lines = " ".join(fuel.plan_lines(plan))
+    assert "Gels carry the session" in lines
+    assert "not the bulk" in lines
+    # ...and the gel schedule is still the bulk of the target
+    assert plan.grams_from_gels > plan.grams_from_drink
+
+
+def test_gel_flask_suggested_only_when_the_count_gets_silly():
+    assert "gel flask" in " ".join(fuel.plan_lines(fuel.build_plan(20.0, week_num=11)))
+    assert "gel flask" not in " ".join(fuel.plan_lines(fuel.build_plan(9.0, week_num=3)))

@@ -90,6 +90,18 @@ runs can go liquid-only, but an 18 or a 20 cannot at any re-dosing frequency —
 the 20 needs ~100 g of gels regardless. Better to say that now than to have it
 discovered at mile 14.
 
+*And then the framing was corrected again, by the athlete.* Having established
+that 9 and 16 mile runs could go liquid-only, the module offered that as an
+equal option. It shouldn't have. Race day carry is the same 500 ml, which
+cannot fuel four hours, so race intake will be gels plus course fluid — a bolus
+every 20 minutes is what the gut has to tolerate. Adapting it to sipped
+carbohydrate in training would train the wrong delivery pattern, however much
+easier that is on the stomach in the moment. Gels are now stated as the
+default and liquid as the top-up, with the carry maths reporting what the
+bottle *could* cover rather than recommending it. A worked arithmetic
+possibility is not the same as a good idea, and the module was presenting one
+as the other.
+
 The same split fixed a timing error. `FIRST_GEL_AT_MIN` is correct for gels —
 a bolus the stomach has to handle — but wrong for drink mix, which is sipped
 continuously from the start. The original text implied the 35-minute wait

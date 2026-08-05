@@ -214,12 +214,20 @@ short ones. Progress **continuous descents of ≥100 ft**, not total gain. Week
 11's 20 is the only full course-profile rehearsal available, because A4
 freezes the taper.
 
+**Gels carry the session; drink tops it up. Never the reverse.** This is
+specificity, not preference: on race day 500 ml can't fuel four hours, so
+intake will be gels plus course fluid, and a bolus every 20 min is what the
+stomach must tolerate. Training mostly on sipped carbohydrate would adapt the
+gut to a pattern race day won't use. Confirmed 05-08-2026 — do not "simplify"
+a long run onto liquid because the arithmetic allows it.
+
 **Carry is 2 × 250 ml bottles on a belt** (confirmed 05-08-2026, with an
-explicit preference for not carrying more). `mc fuel` plans against that real
-capacity: one bottle carb mix, one water + electrolyte tab, re-dosed from a
-sachet at each fountain refill, and it says outright when the run has outgrown
-the belt and the balance must be gels — a 20-miler needs ~100 g of gels no
-matter how often the bottle is re-dosed.
+explicit preference for not carrying more): one bottle carb mix, one water +
+electrolyte tab, re-dosed from a sachet at each fountain refill. `mc fuel`
+reports what the bottle *could* cover, and states the gel floor when the run
+has outgrown the belt — a 20-miler needs ~100 g of gels however the bottles
+are managed. Past ~6 gels, a refillable gel flask is the same product in less
+bulk.
 
 **Carbohydrate and hydration are two separate lines, never merged.** An
 electrolyte tab (Liquid I.V. ≈ 11 g carb, 500 mg sodium) is most of an hour's

@@ -21,6 +21,15 @@ step rather than of race day.
 25 g, both around 100 kcal. Close enough that one interval covers both, and
 quoting the interval in minutes is what actually gets followed mid-run.
 
+**Gels are the trained default; drink is the top-up.** Confirmed 05-08-2026,
+and the reason is specificity rather than preference. On race day 500 ml of
+belt capacity cannot fuel four hours, so the intake will be gels plus whatever
+the course hands over — which makes a bolus every 20 minutes the thing the
+stomach has to tolerate. Training predominantly on sipped carbohydrate would
+adapt the gut to a delivery pattern race day won't use. The carry maths below
+therefore reports what the bottle *could* cover, but the plan never leans on
+it: liquid closes the gap gels leave, not the other way round.
+
 **Carbohydrate and hydration are two jobs, not one.** Confirmed 05-08-2026
 that the 12.5mi long run carried a Liquid I.V. stick in 500 ml — which is an
 electrolyte product at ~11 g carbohydrate, so it did the sodium job and
@@ -265,21 +274,18 @@ def plan_lines(plan: FuelPlan | None) -> list[str]:
         f"tab. Re-dose the carb bottle from a sachet at each refill — powder "
         f"weighs nothing, which is the whole reason this works on a belt.",
     ]
+    lines.append(
+        f"- **Gels carry the session, drink tops it up** — race day is "
+        f"gel-dominant, so training a gut on sipped carbohydrate trains the "
+        f"wrong thing. The bottle could deliver ~{plan.carbs_from_bottles} g "
+        f"here; use it for the balance, not the bulk."
+    )
     if not plan.liquid_only_is_enough:
         lines.append(
-            f"- **Liquid alone won't reach {plan.total_grams} g here.** Re-dosed "
-            f"at every refill the carb bottle delivers about "
-            f"{plan.carbs_from_bottles} g, leaving **~{plan.gel_gap_g} g "
-            f"(~{round(plan.gel_gap_g / GRAMS_PER_GEL)} gels)** to carry. The "
-            f"run is simply longer than 250 ml at a time can fuel."
-        )
-    else:
-        lines.append(
-            f"- At this distance the carb bottle can cover all "
-            f"{plan.total_grams} g on its own (~{plan.carbs_from_bottles} g "
-            f"available) if you'd rather skip gels — provided every refill gets "
-            f"re-dosed. Gels stay the simpler option; this is the choice, not a "
-            f"recommendation."
+            f"- Even leaning on the bottle this run needs "
+            f"~{plan.gel_gap_g} g of gels minimum — 250 ml at a time can't fuel "
+            f"{plan.duration_min / 60:.1f} h. Above ~6 gels, a refillable gel "
+            f"flask carries the same product in less bulk."
         )
     lines += [
         "- Eat 2-3 h beforehand, not 20 min. Log what you actually took and how "
