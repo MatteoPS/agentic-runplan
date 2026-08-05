@@ -481,8 +481,18 @@ def render_markdown(as_of: date) -> str:
 
     tod_buckets = extract_time_of_day_patterns(garmin_activities)
     log_rows = recent_activity_log(garmin_activities, as_of)
-    form_rows = metrics.run_metrics(garmin_activities, as_of)
+    form_rows = metrics.enrich_with_weather(
+        metrics.run_metrics(garmin_activities, as_of), weather.cached_hours()
+    )
     cadence = metrics.cadence_baseline(garmin_activities, as_of)
+    gap_baseline = metrics.pace_baseline(garmin_activities, as_of)
+    # Only the runs long enough for thirds to mean anything — every one of
+    # these reads a detail payload already on disk, so this costs no API calls.
+    splits = {
+        r.activity_id: metrics.cadence_splits(r.activity_id)
+        for r in form_rows
+        if r.activity_id and (r.distance_mi or 0) >= metrics.MIN_DECAY_DISTANCE_MI
+    }
     volumes = [rolling_run_volume(garmin_activities, w, as_of) for w in ROLLING_WINDOWS_DAYS]
     wellness = build_wellness_snapshot(as_of)
 
@@ -503,7 +513,7 @@ def render_markdown(as_of: date) -> str:
     lines.append(f"## Running form (last {metrics.FORM_WINDOW_DAYS} days)")
     lines += metrics.form_table(form_rows)
     lines.append("")
-    lines += metrics.form_summary_lines(form_rows, cadence)
+    lines += metrics.form_summary_lines(form_rows, cadence, gap_baseline, splits)
     lines.append("")
 
     lines.append("## Weather")

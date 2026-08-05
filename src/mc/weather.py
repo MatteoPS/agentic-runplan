@@ -70,7 +70,11 @@ HOURLY_FIELDS = (
 # grid, so sending it would leak precision for no forecast benefit.
 COORD_PRECISION = 2
 
-DEFAULT_PAST_DAYS = 1
+# Past days are free: the same single call returns history and forecast, and
+# 14 matches metrics.FORM_WINDOW_DAYS so every run in the digest's form table
+# can be told what the air was doing while it happened. (Open-Meteo allows up
+# to 92; there's no reason to hold more than the window that gets read.)
+DEFAULT_PAST_DAYS = 14
 DEFAULT_FORECAST_DAYS = 3
 
 # A GPS fix older than this is a poor guess at "where am I now" — after two
@@ -482,6 +486,31 @@ def load_cached() -> dict[str, Any] | None:
         return json.loads(path.read_text())
     except Exception:  # noqa: BLE001 — a corrupt cache is "no weather", not a crash
         return None
+
+
+def cached_hours() -> list[HourlyWeather]:
+    """Every hour on disk, past and forecast. Empty when nothing is cached —
+    callers treat "no weather" as a missing fact, never as a mild day."""
+    envelope = load_cached()
+    if envelope is None:
+        return []
+    return hours_from_payload(envelope.get("data") or {})
+
+
+def weather_at(hours: list[HourlyWeather], when: datetime) -> HourlyWeather | None:
+    """Conditions at a past or future moment, to the nearest cached hour.
+
+    Returns None rather than the closest available hour when that hour is more
+    than 90 minutes away: a run on a day the cache doesn't cover must read as
+    unknown, not get silently attributed to whatever weather happens to be
+    nearest in the file.
+    """
+    if not hours:
+        return None
+    nearest = min(hours, key=lambda h: abs((h.when - when).total_seconds()))
+    if abs((nearest.when - when).total_seconds()) > 90 * 60:
+        return None
+    return nearest
 
 
 def cache_age_hours(envelope: dict[str, Any] | None) -> float | None:

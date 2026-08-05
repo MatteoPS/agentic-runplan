@@ -78,6 +78,11 @@ Ask me, in one message:
    triggers (heat, ≥2 bad readiness signals) when deciding whether to swap
    today's run for cross.
 4. Anything changing in the next 7 days? (travel, life, schedule)
+   — **or**, when the digest's Running form section flags a pace outlier or a
+   late-run cadence fade, spend this question on that instead: "your 31-07 ran
+   X s/mi slower than baseline at a 66°F dew point — was it just hot, or was
+   something else going on?" Ask about the specific run with its numbers. This
+   **replaces** question 4, never adds a fifth.
 5. **Only if step 2's `--pending` check returned a day**: "Did you do
    <DD-MM>'s fixed strength session?" (yes/no).
 
@@ -116,7 +121,11 @@ Follow the exact format from spec §8:
 Usual slot: <time>. <forecast note if relevant> → <action>
 
 ## Why
-- <2–4 bullets citing real numbers from the digest — no filler>
+- <2–4 bullets citing real numbers from the digest — no filler. Where a recent
+  run's pace needs explaining, cite GAP and the dew point from the Running form
+  table rather than calling it slow: "9:32 with 486 ft gain at a 66°F dew point
+  (GAP 9:28)" is a fact; "a bit sluggish" is not. Conditions explain a pace;
+  they never excuse a missed session — that still needs a reason code.>
 
 ## If you can't or shouldn't run
 <substitution table from `mc equiv "<today's session>"`>
@@ -143,7 +152,10 @@ no substitution table, and they add no questions. The heading must contain
 the word "provisional" — that's what keeps `mc push` from consuming them.>
 
 ## Watch
-- <specific things to monitor, or "nothing">
+- <specific things to monitor, or "nothing". Prefer items that can actually be
+  checked tomorrow over ones that can't: "cadence has held 165-168 across paces
+  from 8:48 to 9:32 — if the 12mi comes back under 162, say so" beats "monitor
+  how the shins feel".>
 
 ## Compliance
 Week N: X/Y mi · long run <day> Xmi (locked) · run days X/Y ·

@@ -128,15 +128,31 @@ worse of feels-like and dew point; dew point matters more, since it decides
 whether sweat can evaporate.
 
 The digest also carries a **Running form** section: cadence, elevation gain,
-and Garmin's grade-adjusted pace against raw pace. All of it comes from the
-activity-list call `mc sync` already made — **zero extra API calls**; these
-fields were being fetched and dropped. Cadence is the cheapest objective
-proxy for D2 (gait change), which is otherwise pure self-report — but it
-tracks pace and terrain too, so a drop is reported next to that run's pace
-and is never a finding (§6 D6). Garmin's own `minTemperature`/`maxTemperature`
-is deliberately **not** used: it's a wrist sensor against a warm arm, it
-measures the watch rather than the air, and `mc weather` answers that question
-properly.
+grade-adjusted pace against raw pace, and the dew point each run actually
+happened in. All of it comes from calls `mc sync` already made — **zero extra
+API calls**. Cadence is the cheapest objective proxy for D2 (gait change),
+which is otherwise pure self-report — but it tracks pace and terrain too, so
+a drop is reported next to that run's pace and is never a finding (§6 D6).
+Garmin's own `minTemperature`/`maxTemperature` is deliberately **not** used:
+it's a wrist sensor against a warm arm, it measures the watch rather than the
+air, and Open-Meteo answers that question properly.
+
+**Within-run cadence decay.** For runs ≥5 mi, `mc digest` splits the
+already-cached per-sample stream (`data/raw/garmin/activities/details/`) into
+thirds *by distance* and reports first vs last. This is the question a
+per-activity average cannot answer: 166 spm over 10 miles is equally
+consistent with holding 166 and with running 172 then 160.
+
+**When something looks off, check the conditions before concluding anything.**
+The form table carries each run's dew point, and pace/decay notes quote the
+conditions that run happened in. I do run slower when it's hot and humid — so
+when a run is a pace outlier or fades late, the right move is to **ask**
+("was it hot out there? was it meant to be easy? did anything hurt?"), not to
+assume fatigue and not to assume heat. This is a question that replaces one of
+the existing four, never a fifth. And heat is the easiest thing in this system
+to hide behind: E3 says never soften the framing, so conditions are context
+for a question, never an excuse and never a substitute for the `HEAT` reason
+code when a session actually deviates.
 
 ## §4 verdict vocabulary — fixed, never invent new labels
 

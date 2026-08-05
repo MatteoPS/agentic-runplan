@@ -1,6 +1,10 @@
-from datetime import date
+import json
+from datetime import date, datetime
+
+import pytest
 
 from mc import metrics
+from mc.weather import HourlyWeather
 
 
 def activity(
@@ -216,3 +220,147 @@ def test_summary_always_carries_the_descriptive_only_caveat():
 def test_pace_formatting_rounds_up_to_the_next_minute():
     assert metrics._fmt_pace(8.999) == "9:00"
     assert metrics._fmt_pace(None) == "—"
+
+
+# --- weather attribution ------------------------------------------------------------
+
+
+def hour(when, feels=80.0, dew=70.0):
+    return HourlyWeather(
+        when=when, temp_f=feels, feels_like_f=feels, humidity_pct=70.0,
+        dew_point_f=dew, precip_prob=0.0, precip_in=0.0, wind_mph=3.0,
+    )
+
+
+def test_run_is_joined_to_the_hour_it_happened_in():
+    rows = metrics.run_metrics([activity(start="2026-08-03 20:13:06")], AS_OF)
+    enriched = metrics.enrich_with_weather(
+        rows,
+        [hour(datetime(2026, 8, 3, 19), dew=60.0), hour(datetime(2026, 8, 3, 20), dew=72.0)],
+    )
+    assert enriched[0].dew_point_f == 72.0
+
+
+def test_a_run_outside_the_cached_window_stays_unknown():
+    """Never attribute a run to whatever weather happens to be nearest in the
+    file — an uncovered day must read as unknown."""
+    rows = metrics.run_metrics([activity(start="2026-08-03 20:13:06")], AS_OF)
+    enriched = metrics.enrich_with_weather(rows, [hour(datetime(2026, 7, 20, 20))])
+    assert enriched[0].dew_point_f is None
+    assert "unknown" in metrics.conditions_clause(enriched[0])
+
+
+def test_enrichment_without_any_weather_is_a_no_op():
+    rows = metrics.run_metrics([activity()], AS_OF)
+    assert metrics.enrich_with_weather(rows, [])[0].dew_point_f is None
+
+
+def test_conditions_clause_keeps_unit_capitalisation():
+    """str.capitalize() would render 65°F as 65°f."""
+    rows = metrics.enrich_with_weather(
+        metrics.run_metrics([activity(start="2026-08-03 20:13:06")], AS_OF),
+        [hour(datetime(2026, 8, 3, 20), feels=65.0, dew=53.0)],
+    )
+    assert "53°F" in metrics._sentence(metrics.conditions_clause(rows[0]))
+
+
+# --- pace outliers -------------------------------------------------------------------
+
+
+def test_pace_note_fires_only_on_a_real_outlier():
+    row = metrics.build_run_metrics(activity(distance=1609.344, duration=600.0, gap_speed=1609.344 / 600))
+    assert metrics.pace_note(row, 9.0) is not None   # 10:00 vs 9:00 baseline
+    assert metrics.pace_note(row, 9.9) is None       # within 30 s/mi
+
+
+def test_pace_note_asks_rather_than_concludes():
+    """Heat is the most convenient explanation available, so it is handed over
+    as a question to confirm — never as a verdict (E3)."""
+    row = metrics.build_run_metrics(activity(distance=1609.344, duration=600.0, gap_speed=1609.344 / 600))
+    note = metrics.pace_note(row, 9.0)
+    assert "was it hot" in note.lower()
+    assert "conditions" in note.lower()
+
+
+def test_no_pace_note_without_a_baseline():
+    assert metrics.pace_note(metrics.build_run_metrics(activity()), None) is None
+
+
+# --- within-run cadence decay ----------------------------------------------------------
+
+
+def details_payload(cadences, distance_total=16093.44):
+    """Shaped like a real get_activity_details response, whose metric indices
+    genuinely vary between activities — hence the key lookup."""
+    n = len(cadences)
+    return {
+        "data": {
+            "metricDescriptors": [
+                {"key": "directHeartRate", "metricsIndex": 0},
+                {"key": "sumDistance", "metricsIndex": 1},
+                {"key": "directDoubleCadence", "metricsIndex": 2},
+            ],
+            "activityDetailMetrics": [
+                {"metrics": [140.0, distance_total * i / n, c]} for i, c in enumerate(cadences)
+            ],
+        }
+    }
+
+
+@pytest.fixture
+def details_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(metrics.cfg, "RAW_GARMIN_DIR", tmp_path)
+    d = tmp_path / "activities" / "details"
+    d.mkdir(parents=True)
+    return d
+
+
+def write_details(details_dir, activity_id, cadences, **kw):
+    (details_dir / f"{activity_id}.json").write_text(json.dumps(details_payload(cadences, **kw)))
+
+
+def test_splits_are_taken_by_distance_not_sample_count(details_dir):
+    write_details(details_dir, "1", [170.0] * 60 + [160.0] * 60)
+    splits = metrics.cadence_splits("1")
+    assert splits.first == 170.0
+    assert splits.last == 160.0
+    assert splits.drift_spm == -10.0
+
+
+def test_stopped_samples_are_excluded(details_dir):
+    """Cadence 0 is a traffic light, not a stride."""
+    write_details(details_dir, "1", [170.0] * 60 + [0.0] * 30 + [170.0] * 60)
+    assert metrics.cadence_splits("1").drift_spm == 0.0
+
+
+def test_missing_details_file_is_not_an_error():
+    assert metrics.cadence_splits("nope") is None
+    assert metrics.cadence_splits(None) is None
+
+
+def test_too_few_samples_to_split(details_dir):
+    write_details(details_dir, "1", [170.0] * 10)
+    assert metrics.cadence_splits("1") is None
+
+
+def test_decay_note_needs_a_long_enough_run(details_dir):
+    """'Did form hold up late' isn't a question a 2-miler asks."""
+    write_details(details_dir, "1", [175.0] * 60 + [160.0] * 60)
+    splits = metrics.cadence_splits("1")
+    short = metrics.build_run_metrics(activity(distance=3218.0))  # 2 mi
+    long = metrics.build_run_metrics(activity(distance=16093.44))  # 10 mi
+    assert metrics.decay_note(short, splits) is None
+    assert metrics.decay_note(long, splits) is not None
+
+
+def test_no_decay_note_when_cadence_holds(details_dir):
+    write_details(details_dir, "1", [167.0] * 60 + [165.0] * 60)
+    long = metrics.build_run_metrics(activity(distance=16093.44))
+    assert metrics.decay_note(long, metrics.cadence_splits("1")) is None
+
+
+def test_decay_note_refuses_to_diagnose(details_dir):
+    write_details(details_dir, "1", [175.0] * 60 + [160.0] * 60)
+    long = metrics.build_run_metrics(activity(distance=16093.44))
+    note = metrics.decay_note(long, metrics.cadence_splits("1"))
+    assert "a number, not a finding" in note
