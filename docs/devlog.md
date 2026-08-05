@@ -10,6 +10,115 @@ changed; this says what we learned.
 
 ---
 
+## 04-08-2026 — Ambient weather, and the Garmin fields we were throwing away
+
+`34f9a21`, `c27a22a`
+
+Started as a question during a `/preview`: the digest only ever read four
+fields off each Garmin activity (distance, duration, avg HR, start time), so
+what about everything else the same payload carries?
+
+Two separate answers fell out, and the split between them turned out to be
+the interesting part.
+
+**The fields were already on disk.** `get_activities_by_date` — one call,
+made on every sync since day one — returns cadence, elevation gain/loss and
+Garmin's own grade-adjusted speed. `get_activity_details` writes a per-sample
+stream for every activity. None of it was read. So `mc.metrics` costs **zero
+additional API calls**; it's a parsing change, not a pull. That framing
+decided the whole design: no new fetch, no rate-limit budget, nothing to
+schedule.
+
+**Weather was the opposite — a genuine gap.** §6 C2 permits a cross-training
+swap when "forecast heat is high", and nothing in the system could say what
+the forecast was, while the neighbouring C2 triggers (HRV, sleep, RHR)
+demanded cited numbers. `/preview` had the same hole at its centre: its entire
+reason for existing is "early alarm outside, or indoors any time?", answered
+nightly without a temperature. Open-Meteo closes it for one keyless call per
+sync, on a different provider from Garmin so it competes for no rate budget.
+
+**Why the heat vocabulary is deliberately not §4's.** `none / noticeable /
+hard / extreme`, with a test asserting the two sets stay disjoint. §4's four
+verdicts describe how well cross-training substitutes for a run and must never
+be invented anew; letting "⚠️ aerobic only" drift into meaning "it's warm out"
+would corrupt the one vocabulary the spec pins hardest. Different axis,
+different words, enforced.
+
+**`rules.py` was not touched, on purpose.** Heat data is *input to* a decision
+a human makes, not a rule that fires. C2 is a permission exercised by citing
+numbers, exactly as before — there is now something real to cite.
+
+**Windows are summarised by their worst hour, not their average.** A window is
+a commitment to be outside for all of it; averaging a pleasant 06:00 with an
+unpleasant 07:45 produces a recommendation that doesn't survive the run.
+
+**Location follows the runs.** Taken from the most recent GPS activity so it
+reaches Italy in weeks 8-9 unprompted, rounded to 2dp before it leaves the
+machine. The rounding isn't a gesture: Open-Meteo snaps to its own grid
+anyway (a 40.7994/-73.9580 request resolves to 40.78858/-73.9661), so finer
+coordinates describe a doorstep and buy nothing. `MC_WEATHER_LAT/LON`
+overrides and wins when set — which means it keeps reporting home weather
+after a flight, so the source used is printed on every run rather than only
+when it's interesting.
+
+**Fahrenheit is canonical internally**, Celsius a display conversion. Fetching
+in whichever unit was configured would make every threshold in the file depend
+on an env var — the same class of bug "miles, always, never km" exists to
+prevent.
+
+**Garmin's own temperature stays unused,** and the module says why so nobody
+re-adds it: it's a wrist sensor against a warm arm in the sun, measuring the
+watch rather than the air.
+
+**What the second commit added, and what it revealed.** Splitting the cached
+per-sample cadence stream into thirds *by distance* (not elapsed time — a long
+red light shouldn't count as a third of a run) answers what an average
+structurally cannot. On real data: 31-07's 10.5-miler held 167/165/165, while
+23-07 went 172/174/165. Identical 165-166 averages, completely different runs.
+
+Then `past_days` 1 → 14 in the same single call, so every run in the form
+window knows what the air was doing while it happened. 23-07 ran 8:48 at a
+53°F dew point; 31-07 ran 9:32 at 66°F.
+
+**The design problem that took the most thought: not building an excuse
+machine.** Heat genuinely slows this athlete down *and* is the easiest thing
+in the system to hide behind, and E3 says never soften the framing. So
+`pace_note` fires only on real outliers (30+ s/mi off the trailing GAP
+median), quotes the conditions, and **asks** — "was it hot, was it meant to be
+easy, did something hurt?" — rather than concluding. Conditions explain a
+pace; they never excuse a session, which still needs the `HEAT` reason code.
+The 23-07 case shows why stating conditions unconditionally matters: that fade
+happened in the *coolest* air of the fortnight, so the clause ruled heat out
+as readily as it would have implicated it. A system that mentioned weather
+only when it was hot would be an excuse generator.
+
+**Deliberately not built: a fitted heat-vs-pace number.** With 15 runs and no
+session-type labels in the Garmin summary, "hot day" can't be separated from
+"that was meant to be a hard 5K". A regression there would read far more
+authoritative than it deserves. Per-run conditions plus a question is the
+honest version at this n; see TODO for what would change that.
+
+**A pleasant surprise from the data.** Cadence turned out to be nearly
+pace-independent for this athlete — 44 s/mi of pace spread (8:48 → 9:32)
+moved cadence only 165 → 168. That's what makes a flat baseline usable at all;
+for a runner whose cadence swung 10 spm with pace it would have needed banding
+by pace first. Recorded as a comment on the threshold, because it's an
+assumption that could stop being true.
+
+**Fixed along the way:** `test_garmin_auth`'s `run_sync` test wrote for real,
+overwriting the actual `sync_report.json` in `MC_STATE_DIR` with a fabricated
+MFA failure on every `pytest` run — pre-existing, but this change would also
+have had it making live network calls from the suite.
+
+**Also learned, while deciding whether a Garmin CSV export was worth
+importing:** intervals.icu already holds 217 activities / 146 runs back to
+2025-07-28, through credentials already in `.env`. The CSV was the worse
+version of something already reachable. TODO records the two traps a backfill
+would hit — intervals reports single-leg cadence where Garmin reports
+double-leg (exactly 2×), and its summary carries no GPS at all.
+
+---
+
 ## 03-08-2026 — `/daily` and `/preview` stop auto-rendering HTML
 
 `13e433c`, `cf3942f`

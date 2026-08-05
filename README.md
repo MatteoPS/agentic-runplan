@@ -41,7 +41,27 @@ normal single-repo project. See [Private state](#private-state-optional).
   stale or missing rather than pretending it isn't (`mc sync`).
 - **Turns the cache into a daily digest** — data health, actual habitual
   training times (weekday vs. weekend, AM vs. PM), recent activity log,
-  rolling volume, and a wellness snapshot (`mc digest`).
+  rolling volume, running form, weather, and a wellness snapshot
+  (`mc digest`).
+- **Knows what the weather will actually be** (`mc weather`) — ambient
+  conditions by training window (early / morning / midday / evening), each
+  summarised by its *worst* hour, because a window is a commitment to be
+  outside for all of it. Source is [Open-Meteo](https://open-meteo.com):
+  no API key, one call per sync. This is what turns "is it too hot to run
+  outside?" from a guess into a cited number — and the location comes from
+  your most recent GPS activity, so it follows you when you travel.
+- **Reads the metrics your watch already recorded and nobody looked at** —
+  cadence, elevation gain, grade-adjusted vs. raw pace, and for longer runs
+  whether cadence *held* from the first third to the last. All of it parsed
+  from data already on disk: **zero extra API calls**. A 166 spm average over
+  10 miles is equally consistent with holding 166 and with running 172 then
+  160; only the split can tell you which.
+- **Asks instead of assuming when something looks off.** Every run is tagged
+  with the dew point it actually happened in, so a slow one gets a question
+  ("was it hot, was it meant to be easy, did something hurt?") rather than a
+  verdict. Conditions explain a pace; they never excuse a session, which
+  still needs a reason code. None of this is a diagnosis — it's descriptive,
+  and no rule fires on it.
 - **Holds a frozen, immutable plan** (`plan/plan.lock.json`) — in my case a
   [Hal Higdon Intermediate 1 marathon](https://www.halhigdon.com/training-programs/marathon-training/intermediate-1-marathon/) plan compressed 18→14 weeks, with a
   3-week travel block built in as a first-class part of the plan (not a pile
@@ -142,6 +162,25 @@ folder. If it happens to sit inside a folder your cloud client already syncs,
 that client carries it to your phone — `mc` makes no network call and holds no
 cloud credentials. Unset, the feature is off.
 
+### Weather (optional, on by default)
+
+No API key exists for [Open-Meteo](https://open-meteo.com), so there's nothing
+to configure for the common case — `mc sync` fetches a forecast and everything
+else reads the cache. The only thing that leaves your machine is **one
+coordinate pair, rounded to 2 decimal places** (~1.1 km), taken from your most
+recent GPS activity so it follows you when you travel. Rounding costs nothing:
+Open-Meteo snaps every request to its own model grid anyway, so finer
+coordinates describe your doorstep without improving the forecast.
+
+```
+MC_WEATHER_LAT=40.80        # override the inferred location — wins when set,
+MC_WEATHER_LON=-73.96       # so it won't follow you; `mc weather` prints which
+                            # source was used on every run
+MC_TEMP_UNIT=celsius        # display only; °F is canonical internally, so
+                            # thresholds never shift when you flip this
+MC_WEATHER=off              # no forecast, no outbound call at all
+```
+
 ## Normal use — a typical day
 
 Most days, you'd just run the `/daily` slash command in Claude Code. It:
@@ -186,6 +225,7 @@ Everything runs as `uv run mc <command>`.
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mc sync [--since DAYS] [--source garmin\|intervals\|both]`  | Pull fresh data. Never runs automatically — this is the only thing that talks to Garmin's API.                                                                                                                                                                                                                                                                                                |
 | `mc digest [--date DD-MM]`                                 | Regenerate the markdown digest from cached data.                                                                                                                                                                                                                                                                                                                                               |
+| `mc weather [--date DD-MM] [--days N] [--refresh]`         | Conditions by training window, each summarised by its worst hour, coolest marked. Reads the cache written by `mc sync`; `--refresh` fetches now. Heat levels are `none/noticeable/hard/extreme` — a reporting label to cite, never a rule that fires on its own. |
 | `mc status`                                                | Current week: plan vs. actual, compliance floor, long-run ratio.                                                                                                                                                                                                                                                                                                                               |
 | `mc check`                                                 | Run the rule engine against the current week and print any violations.                                                                                                                                                                                                                                                                                                                         |
 | `mc week [--week N \| --wc DD-MM]`                          | Show any week's plan and actuals.                                                                                                                                                                                                                                                                                                                                                              |
@@ -207,7 +247,7 @@ Everything runs as `uv run mc <command>`.
 
 ```
 src/mc/          the actual system: sync, digest, plan, planning, rules, layout, equivalence,
-                 render, export, drift, state, cli, push, strength
+                 render, export, drift, state, cli, push, strength, weather, metrics
 plan/            plan-source.md (verbatim Higdon), plan.md (compressed + reasoning),
                  plan.lock.json (frozen, immutable — see CLAUDE.md for how it's protected)
 context/         equivalence.md (sourced cross-training research), overrides.md, athlete context

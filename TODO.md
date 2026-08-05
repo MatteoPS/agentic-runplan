@@ -4,6 +4,44 @@ Assessed in `docs/todo-review.md`; the agreed sequence lives there.
 
 ## Next up
 
+- **Backfill a year of history — from intervals.icu, not a Garmin CSV.**
+  Probed 04-08-2026: intervals.icu already holds **217 activities / 146 runs
+  back to 2025-07-28**, through the API key that's already in `.env` and the
+  client that's already in `src/mc/intervals.py`. A manual CSV export is
+  therefore the worse version of a thing already reachable — unstructured,
+  un-repeatable, and stale the day after it's downloaded. What's needed is
+  raising `MAX_SINCE_DAYS` (150 today) and a one-off backfill path, not a
+  parser.
+
+  **What it would unlock, specifically:** 146 runs spanning summer 2025 →
+  winter → summer 2026 crosses seasons, which is the one thing that makes a
+  *fitted* heat-vs-pace relationship defensible. Right now `pace_note` can
+  only say "you were 30 s/mi slow and the dew point was 66°F, was it the
+  heat?" — with a season of data it could say what this athlete's own pace
+  actually does per 10°F of dew point, which is citable evidence for a §6 C2
+  swap instead of a question.
+
+  **Two traps, both confirmed against real data:**
+  1. intervals reports **single-leg** cadence (83.9) where Garmin reports
+     **double-leg** (167.65) — exactly 2×. A backfill that merges them
+     naively halves the cadence baseline and every note built on it goes
+     quietly wrong. Normalise on the way in, and assert the merged
+     distribution doesn't straddle both conventions.
+  2. intervals' activity summary carries **no GPS coordinates**, so historical
+     runs can't be weather-attributed the way current ones are. Open-Meteo's
+     archive API can backfill from an *assumed* location, which is fine for a
+     mostly-NYC year but is an assumption that must be recorded per row, not
+     folded silently into the numbers.
+
+  **Not urgent.** The season generates this data anyway, and n grows weekly.
+  Worth doing when the "was it hot?" question has been asked enough times to
+  be worth answering in advance — not before.
+
+  **Explicitly out of scope:** retrospective correlation of shin symptoms
+  against past mileage. That's the diagnosis-shaped inference D6 rules out,
+  and a year of n=1 observational data is exactly enough to produce a
+  confident wrong answer.
+
 - **Run `/daily` from the phone.** The state split below is done, which was
   the blocker — a cloud agent can now clone code (public) + history (private)
   and have everything `/daily` reads. What's left is the environment, not this
