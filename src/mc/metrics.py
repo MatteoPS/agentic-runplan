@@ -26,11 +26,19 @@ Deliberately **not** here, though the same payload carries them:
 - `minTemperature`/`maxTemperature` — a wrist sensor sitting against a warm
   arm in the sun. It measures the watch, not the air. `weather.py` answers
   the question this field looks like it answers, with real ambient data.
-- `avgStrideLength`, `avgGroundContactTime`, `avgVerticalOscillation`,
-  `avgVerticalRatio` — no §6 rule reads them, and nothing in this plan defines
-  what a bad value would even be. Adding numbers nobody can act on is how a
-  digest stops being read. They stay in the raw cache, available the day
-  there's a question that needs them.
+- `avgGroundContactTime`, `avgVerticalOscillation`, `avgVerticalRatio` — no §6
+  rule reads them, and nothing in this plan defines what a bad value would even
+  be. Adding numbers nobody can act on is how a digest stops being read. They
+  stay in the raw cache, available the day there's a question that needs them.
+
+**Stride length** was on that list until 05-08-2026, when a question arrived
+that needed it. Reviewing the 2025 NYC marathon lap file showed cadence *rising*
+over the final three miles (160 → 166-169 spm) while stride length fell 0.966m
+→ 0.845m — the within-run decay check, keyed on cadence alone, would have said
+nothing about the most instructive run in this athlete's history. Stride is
+where a tiring runner actually gives up ground. It is read per-sample in
+`run_splits` only, not as a per-run average: the average has the same problem
+the cadence average had.
 
 **These are descriptive, not diagnostic (§6 D6).** Cadence tracks pace,
 terrain and fatigue all at once, so a drop is a fact about a run, never a
@@ -76,6 +84,25 @@ CADENCE_NOTE_SPM = 5.0
 # it is between runs — same shoes, same route, same day. 4 spm is the judgment
 # call here, on the same footing as the threshold above.
 DECAY_NOTE_SPM = 4.0
+
+# Stride length is the metric cadence cannot stand in for. In the 2025 NYC
+# marathon (4:48:58, a 17-minute positive split) cadence *rose* — 160 spm
+# through Brooklyn, 166-169 over the last three miles — while stride length
+# fell 0.966m → 0.845m. A cadence-only decay check would have reported nothing
+# about the run that most needed reporting. 5% is set above the swing an easy
+# run shows from pace alone, so this fires on a genuine shortening.
+DECAY_NOTE_STRIDE_PCT = 5.0
+
+# Grade-adjusted pace across the thirds is *reported* but deliberately does not
+# *trigger* the note on its own. Checked against the real cache 05-08-2026: a
+# warmup and a cooldown live in the first and last thirds, so a structured run
+# shows a large apparent fade with no fade in it — 23369959611 goes 9:01 → 7:28
+# → 10:06, which is a workout, not a collapse. Every threshold in this module
+# errs toward saying nothing; pace decay is the one that would err the other
+# way, so it earns its place as context next to a cadence or stride trip rather
+# than as a trigger. This bound only decides whether the clause is worth
+# printing once the note is already firing.
+GAP_CLAUSE_SEC_PER_MI = 10.0
 
 # Below this, thirds are too short for the comparison to mean anything, and
 # "did form hold up late in a long run" isn't a question a 2-miler asks.
@@ -302,48 +329,107 @@ def conditions_clause(row: RunMetrics) -> str:
     )
 
 
-# --- within-run cadence decay ----------------------------------------------------
+# --- within-run decay ------------------------------------------------------------
+
+# Below this a sample is standing still, not striding — a red light, not a step.
+_MIN_MOVING_SPEED_MS = 0.5
 
 
 @dataclass(frozen=True)
-class CadenceSplits:
-    """Median cadence over the first, middle and final third of a run, split
-    by distance covered."""
+class Thirds:
+    """One metric's median over the first, middle and final third of a run."""
 
     first: float | None
     middle: float | None
     last: float | None
+
+    @property
+    def drift(self) -> float | None:
+        """Final third minus first third. Sign is the metric's own."""
+        if self.first is None or self.last is None:
+            return None
+        return self.last - self.first
+
+    @property
+    def drift_pct(self) -> float | None:
+        drift = self.drift
+        if drift is None or not self.first:
+            return None
+        return drift / self.first * 100.0
+
+
+@dataclass(frozen=True)
+class RunSplits:
+    """How cadence, stride length and pace moved across a run's three thirds.
+
+    Cadence alone answers less than it appears to. Stride length is where a
+    tiring runner actually gives up ground, and grade-adjusted pace says
+    whether the terrain explains it. All three come from the same cached
+    payload, so carrying them costs nothing.
+    """
+
+    cadence: Thirds  # spm
+    stride: Thirds  # metres per step
+    gap: Thirds  # min/mi, grade-adjusted
+    pace: Thirds  # min/mi, raw
     n_samples: int
 
     @property
     def drift_spm(self) -> float | None:
-        """Final third minus first third. Negative means cadence fell."""
-        if self.first is None or self.last is None:
+        drift = self.cadence.drift
+        return None if drift is None else round(drift, 1)
+
+    @property
+    def stride_drift_pct(self) -> float | None:
+        pct = self.stride.drift_pct
+        return None if pct is None else round(pct, 1)
+
+    @property
+    def gap_drift_sec(self) -> float | None:
+        """Positive means the last third was slower, terrain accounted for."""
+        drift = self.gap.drift
+        return None if drift is None else round(drift * 60, 0)
+
+    def terrain_cost_sec_per_mi(self, third: str) -> float | None:
+        """Raw pace minus grade-adjusted pace for one third, in sec/mile.
+
+        The within-run version of `RunMetrics.terrain_cost_sec_per_mi`, and the
+        thing that separates "the last third was uphill" from "the last third
+        was slower". Positive: that stretch cost time against flat.
+        """
+        raw = getattr(self.pace, third)
+        gap = getattr(self.gap, third)
+        if raw is None or gap is None:
             return None
-        return round(self.last - self.first, 1)
+        return round((raw - gap) * 60, 0)
 
 
 def _details_path(activity_id: str):
     return cfg.RAW_GARMIN_DIR / "activities" / "details" / f"{activity_id}.json"
 
 
-def cadence_splits(activity_id: str | None) -> CadenceSplits | None:
-    """Per-sample cadence from the already-cached activity detail payload.
+def run_splits(activity_id: str | None) -> RunSplits | None:
+    """Per-sample form metrics from the already-cached activity detail payload.
 
     `get_activity_details` has been called and written to disk for every
     activity since this system's first sync — this reads that file. **Zero API
-    calls.**
+    calls.** `directStrideLength` and `directGradeAdjustedSpeed` ship in the
+    same payload as cadence, so widening this from cadence alone added no
+    request to any rate budget.
 
     Splitting by distance rather than elapsed time keeps a long red light from
     counting as a third of the run. Medians, not means, so a few walk or
     stopped samples don't drag a third. Metrics are looked up by key name
     because the index order genuinely varies between activities (a real
-    payload here has 9 metrics, another has 17).
+    payload here has 9 metrics, another has 17), and every stream but cadence
+    and distance is optional — an older cached payload simply reports `None`
+    for the thirds it cannot fill.
 
     One honest bias: the first third includes any warmup ramp, which pulls its
-    median down and therefore makes decay look *smaller* than it was. The
-    error runs toward saying nothing, which is the right direction for a
-    number that exists to raise a question.
+    cadence and stride medians down and its paces up, and therefore makes
+    decay look *smaller* than it was on all three. The error runs toward
+    saying nothing, which is the right direction for numbers that exist to
+    raise a question.
     """
     if not activity_id:
         return None
@@ -361,16 +447,36 @@ def cadence_splits(activity_id: str | None) -> CadenceSplits | None:
     distance_idx = descriptors.get("sumDistance")
     if cadence_idx is None or distance_idx is None:
         return None
+    stride_idx = descriptors.get("directStrideLength")
+    gap_idx = descriptors.get("directGradeAdjustedSpeed")
+    speed_idx = descriptors.get("directSpeed")
 
-    samples: list[tuple[float, float]] = []
+    def value_at(values: list[Any], index: int | None) -> float | None:
+        if index is None or len(values) <= index:
+            return None
+        raw = values[index]
+        return None if raw is None else float(raw)
+
+    # (distance, cadence, stride_m, gap_speed_ms, speed_ms)
+    samples: list[tuple[float, float, float | None, float | None, float | None]] = []
     for row in rows:
         values = row.get("metrics") or []
-        if len(values) <= max(cadence_idx, distance_idx):
-            continue
-        cadence, distance = values[cadence_idx], values[distance_idx]
+        cadence = value_at(values, cadence_idx)
+        distance = value_at(values, distance_idx)
         if cadence is None or distance is None or cadence <= 0:
             continue
-        samples.append((float(distance), float(cadence)))
+        stride_cm = value_at(values, stride_idx)
+        gap_speed = value_at(values, gap_idx)
+        speed = value_at(values, speed_idx)
+        samples.append(
+            (
+                distance,
+                cadence,
+                stride_cm / 100.0 if stride_cm and stride_cm > 0 else None,
+                gap_speed if gap_speed and gap_speed > _MIN_MOVING_SPEED_MS else None,
+                speed if speed and speed > _MIN_MOVING_SPEED_MS else None,
+            )
+        )
 
     if len(samples) < 30:  # a run too short or too sparsely sampled to split
         return None
@@ -380,41 +486,124 @@ def cadence_splits(activity_id: str | None) -> CadenceSplits | None:
     if total <= 0:
         return None
 
-    thirds: list[list[float]] = [[], [], []]
-    for distance, cadence in samples:
+    buckets: list[list[tuple[float, float | None, float | None, float | None]]]
+    buckets = [[], [], []]
+    for distance, cadence, stride, gap_speed, speed in samples:
         index = min(2, int(distance / total * 3))
-        thirds[index].append(cadence)
+        buckets[index].append((cadence, stride, gap_speed, speed))
 
-    def median_of(values: list[float]) -> float | None:
-        return round(statistics.median(values), 1) if values else None
+    def thirds_of(field: int, convert=None) -> Thirds:
+        out: list[float | None] = []
+        for bucket in buckets:
+            values = [row[field] for row in bucket if row[field] is not None]
+            if not values:
+                out.append(None)
+                continue
+            median = statistics.median(values)
+            converted = convert(median) if convert else median
+            out.append(None if converted is None else round(converted, 3))
+        return Thirds(*out)
 
-    return CadenceSplits(
-        first=median_of(thirds[0]),
-        middle=median_of(thirds[1]),
-        last=median_of(thirds[2]),
+    # Median the speed, then convert — a median of paces would be skewed by the
+    # near-zero speeds that produce enormous min/mi values.
+    return RunSplits(
+        cadence=thirds_of(0),
+        stride=thirds_of(1),
+        gap=thirds_of(2, _speed_to_pace),
+        pace=thirds_of(3, _speed_to_pace),
         n_samples=len(samples),
     )
 
 
-def decay_note(row: RunMetrics, splits: CadenceSplits | None) -> str | None:
+def decay_note(row: RunMetrics, splits: RunSplits | None) -> str | None:
     """Whether form held together late in a long run.
 
     This is the question the per-activity average cannot answer: 166 spm for a
     10-mile run is equally consistent with holding 166 throughout and with
     running 172 then 160.
+
+    Cadence and stride length each trip it independently. The most informative
+    case in this athlete's history is the one where cadence *held* — rose, in
+    fact — and stride collapsed, so requiring the two to agree would suppress
+    exactly the run worth asking about.
+
+    Grade-adjusted pace rides along as context rather than as a trigger; see
+    `GAP_CLAUSE_SEC_PER_MI` for why. The per-third terrain cost is printed with
+    it so "the last third was uphill" stays distinguishable from "the last
+    third was slower".
     """
-    if splits is None or splits.drift_spm is None:
+    if splits is None:
         return None
     if row.distance_mi is None or row.distance_mi < MIN_DECAY_DISTANCE_MI:
         return None
-    if splits.drift_spm > -DECAY_NOTE_SPM:
-        return None
-    return (
-        f"{row.label} ({row.distance_mi:.1f} mi): cadence {splits.first:.0f} → "
-        f"{splits.last:.0f} spm first third to last ({splits.drift_spm:+.0f}). "
-        f"{_sentence(conditions_clause(row))}. Worth asking how the last "
-        f"few miles felt — this is a number, not a finding."
+
+    cadence_drift = splits.drift_spm
+    stride_drift = splits.stride_drift_pct
+    gap_drift = splits.gap_drift_sec
+
+    tripped = (cadence_drift is not None and cadence_drift <= -DECAY_NOTE_SPM) or (
+        stride_drift is not None and stride_drift <= -DECAY_NOTE_STRIDE_PCT
     )
+    if not tripped:
+        return None
+
+    parts: list[str] = []
+    if cadence_drift is not None:
+        parts.append(
+            f"cadence {splits.cadence.first:.0f} → {splits.cadence.last:.0f} spm "
+            f"({cadence_drift:+.0f})"
+        )
+    if stride_drift is not None:
+        parts.append(
+            f"stride {splits.stride.first:.2f} → {splits.stride.last:.2f} m "
+            f"({stride_drift:+.1f}%)"
+        )
+    if gap_drift is not None and abs(gap_drift) >= GAP_CLAUSE_SEC_PER_MI:
+        first_cost = splits.terrain_cost_sec_per_mi("first")
+        last_cost = splits.terrain_cost_sec_per_mi("last")
+        terrain = ""
+        if first_cost is not None and last_cost is not None:
+            terrain = f", terrain {first_cost:+.0f} → {last_cost:+.0f} s/mi"
+        parts.append(
+            f"grade-adjusted pace {_fmt_pace(splits.gap.first)} → "
+            f"{_fmt_pace(splits.gap.last)} /mi ({gap_drift:+.0f} s/mi{terrain})"
+        )
+
+    return (
+        f"{row.label} ({row.distance_mi:.1f} mi), first third to last: "
+        f"{'; '.join(parts)}. {_sentence(conditions_clause(row))}. "
+        f"{_decay_pattern(cadence_drift, stride_drift)} Worth asking how the "
+        f"last few miles felt — these are numbers, not a finding, and a warmup "
+        f"or cooldown sits inside these thirds."
+    )
+
+
+def _decay_pattern(cadence_drift: float | None, stride_drift: float | None) -> str:
+    """Name which of the two fell, because they mean different things.
+
+    Turnover and ground covered per step fail independently, and the pairing is
+    more informative than either number. Cadence easing while stride holds is
+    what deliberately backing off looks like; stride shortening while cadence
+    holds is the one that cost this athlete 17 minutes at NYC in 2025. Still a
+    description of a run, never a verdict about a body (§6 D6).
+    """
+    if stride_drift is None:
+        return ""
+    cadence_fell = cadence_drift is not None and cadence_drift <= -DECAY_NOTE_SPM
+    stride_fell = stride_drift <= -DECAY_NOTE_STRIDE_PCT
+    if stride_fell and not cadence_fell:
+        return (
+            "Stride shortened while cadence held — ground per step, not "
+            "turnover, which is the pattern most worth asking about."
+        )
+    if stride_fell and cadence_fell:
+        return "Both fell, so the whole stride shortened rather than just its rate."
+    if cadence_fell:
+        return (
+            "Cadence eased while stride held, which looks more like backing "
+            "off or a cooldown than like fade."
+        )
+    return ""
 
 
 def pace_note(row: RunMetrics, baseline_gap: float | None) -> str | None:
@@ -509,7 +698,7 @@ def form_summary_lines(
     rows: list[RunMetrics],
     baseline: CadenceBaseline,
     baseline_gap: float | None = None,
-    splits_by_id: dict[str, CadenceSplits | None] | None = None,
+    splits_by_id: dict[str, RunSplits | None] | None = None,
 ) -> list[str]:
     lines: list[str] = []
     if baseline.usable and baseline.median_spm is not None:
@@ -545,7 +734,7 @@ def form_summary_lines(
     if not notes and baseline.usable:
         lines.append(
             "- Nothing standing out: no run below the cadence baseline, no "
-            "late-run cadence fade, no pace outlier."
+            "late-run cadence or stride fade, no pace outlier."
         )
 
     lines.append(

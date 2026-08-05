@@ -137,11 +137,32 @@ Garmin's own `minTemperature`/`maxTemperature` is deliberately **not** used:
 it's a wrist sensor against a warm arm, it measures the watch rather than the
 air, and Open-Meteo answers that question properly.
 
-**Within-run cadence decay.** For runs ≥5 mi, `mc digest` splits the
-already-cached per-sample stream (`data/raw/garmin/activities/details/`) into
-thirds *by distance* and reports first vs last. This is the question a
-per-activity average cannot answer: 166 spm over 10 miles is equally
-consistent with holding 166 and with running 172 then 160.
+**Within-run decay.** For runs ≥5 mi, `mc digest` splits the already-cached
+per-sample streams (`data/raw/garmin/activities/details/`) into thirds *by
+distance* and reports first vs last. This is the question a per-activity
+average cannot answer: 166 spm over 10 miles is equally consistent with
+holding 166 and with running 172 then 160.
+
+Three metrics, all from that same payload, still **zero extra API calls**:
+
+- **Cadence** — turnover. Trips the note at −4 spm.
+- **Stride length** (`directStrideLength`) — ground covered per step. Trips at
+  −5%. Added 05-08-2026 after the 2025 NYC marathon lap file showed cadence
+  *rising* over the final three miles (160 → 166-169 spm) while stride fell
+  0.966m → 0.845m across a 17-minute positive split. A cadence-only check
+  reports **nothing** about that run, which is why the two trip independently
+  and are never required to agree.
+- **Grade-adjusted pace** (`directGradeAdjustedSpeed`), with raw-vs-GAP
+  terrain cost per third — **reported, never a trigger**. A warmup and a
+  cooldown sit in the first and last thirds, so a structured run shows fade it
+  did not have (a real cached workout goes 9:01 → 7:28 → 10:06). Every other
+  threshold here errs toward saying nothing; this is the one that would err
+  the other way.
+
+The note names *which* fell, because they mean different things: cadence
+easing while stride holds is what backing off or a cooldown looks like; stride
+shortening while cadence holds is legs. Both are still descriptions of a run,
+never a verdict about a body (§6 D6).
 
 **When something looks off, check the conditions before concluding anything.**
 The form table carries each run's dew point, and pace/decay notes quote the
