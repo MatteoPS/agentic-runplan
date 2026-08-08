@@ -181,8 +181,14 @@ def is_stale(md_path: Path, as_of: date | None = None) -> bool:
     return header != as_of.strftime("%d-%m") and header != (as_of + timedelta(days=1)).strftime("%d-%m")
 
 
-def render_all(out_dir: Path = cfg.OUT_DIR, as_of: date | None = None) -> tuple[list[Path], list[Path]]:
-    """Returns (rendered, skipped). Skipped are stale provisional files."""
+def render_all(out_dir: Path | None = None, as_of: date | None = None) -> tuple[list[Path], list[Path]]:
+    """Returns (rendered, skipped). Skipped are stale provisional files.
+
+    out_dir resolves at call time, not import time, so a test pointing
+    cfg.OUT_DIR at a tmp_path is actually obeyed -- the baked default made
+    `mc render --all` unconditionally write into the real state repo.
+    """
+    out_dir = out_dir if out_dir is not None else cfg.OUT_DIR
     if not out_dir.exists():
         return [], []
     rendered, skipped = [], []

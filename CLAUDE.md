@@ -34,8 +34,9 @@ read the digest + `plan.lock.json` +
 sleep, shins/hamstring, anything changing in the next 7 days — never more,
 never pad), **plus a 5th only when a fixed strength day from earlier this
 week still needs a done/missed confirmation** → `mc check` → write
-`out/today.md` + `.html` → append to `log/sessions/`. See
-`.claude/commands/daily.md` for the exact format.
+`out/today.md` → `mc render --all` (dashboard refresh + `out/` tidy) →
+append to `log/sessions/`. See `.claude/commands/daily.md` for the exact
+format.
 
 Other slash commands: `/week` (Monday review), `/plan [n]` (next n days,
 default 3), `/preview` (end of day: log today, project tomorrow), `/travel`
@@ -55,13 +56,84 @@ assumptions that must be **printed, never implied**. A projection must never
 harden into a commitment: projected days are never `mc propose`d, never
 pushed (`mc push` refuses anything marked provisional), and get no
 substitution table, because whether to swap a run for the elliptical is a
-same-day judgement. `mc render` skips a stale `out/tomorrow.md` rather than
-turning yesterday's guess into a fresh-looking page.
+same-day judgement. `mc tidy` deletes a stale `out/tomorrow.md` rather than
+letting yesterday's guess sit there looking fresh.
 
 Optional: `MC_EXPORT_DIR` in `.env` makes `mc render --all` copy `out/*.html`
 and `today.md` into that local folder — typically one a cloud client already
 syncs to the phone. Plain file copy, no cloud API, write-only, nothing read
 back.
+
+## out/ holds only what's current; markdown is the output (added 08-08-2026)
+
+Nothing used to delete anything from `out/`, so it accumulated a `tomorrow.md`
+for a day that had passed, HTML twins days older than the markdown they claimed
+to render, and one-off documents that outlived their day. A stale file there is
+worse than a missing one: missing is obvious, stale looks exactly like current,
+and `out/` is what gets read on a phone at 6am.
+
+`mc tidy` enforces one principle: **a file in `out/` must declare the day it is
+for, and one whose day has passed is deleted.** Two ways to declare it, both
+already conventions here rather than new syntax — a `# DD-MM` header in the
+markdown (what `/daily` and `/preview` already write), or a `-DD-MM` suffix on
+the filename (which retires `race-strategy-08-08.md` and every future dated
+one-off with no registry to maintain). The header wins over the filename: we
+believe the file, same precedent as `push._check_today_md_date`. An `.html`
+whose `.md` is gone or newer goes too. `dashboard.md` is exempt — it is a
+rolling view of the whole plan, not a document about a day. A `.md` carrying
+**no** date signal is **reported and left alone**; silently deleting something
+unrecognised is the wrong instinct for a folder a person keeps things in.
+Deletion loses nothing — the state repo's git history and `log/sessions/` are
+the durable record.
+
+**HTML is opt-in.** `mc render --all` refreshes `out/dashboard.md`, tidies, and
+exports — no `.html` at all. `mc render --all --html` adds the standalone
+twins. The machinery all stays, one flag away; it was being generated on every
+run and read by nobody, since the output is read as markdown on GitHub.
+
+**The dashboard refreshes daily**, not weekly. `/daily`, `/preview` and `/week`
+all run `mc render --all`, so completion percentages and finished runs move
+every day. (Before this, *no* slash command ran it — the dashboard was stale
+until refreshed by hand.)
+
+## Mid-week compliance is checked against the week as proposed (added 08-08-2026)
+
+§6's A-rules are **whole-week** metrics. `mc check` used to build its
+`ProposedWeek` from actuals-so-far, which is a category error: A2's floor is a
+fraction of the week's *planned* miles, so on a build week (floor 0.95) it
+**cannot** pass before roughly Saturday. A1/A3 fired until the long run
+happened, A10 until the third running day, and A9 worst of all — a partial
+denominator makes the ratio *worse*, so an 11 mi long run done first in a 25 mi
+week read as 100% against a 0.39 cap. Every mid-week run produced warnings that
+were arithmetic rather than findings, and warnings you dismiss daily are
+warnings you stop reading.
+
+`mc check` now judges the **blend**: actuals for the days already settled, the
+persisted layout for the days still ahead. Per day — anything before today
+counts what actually happened (0.0 when nothing was logged; a miss is real),
+today and later count the layout **unless** that day already has a logged
+activity, in which case actuals win (`/preview` runs after the session, and a
+day run longer than planned should count what was run). `long_run_mi` takes the
+layout's figure only while the long-run day is still ahead; once it has passed
+unrun, the shortfall is the finding.
+
+This silences arithmetic, **not findings**. A skipped Tuesday still drags the
+projection under the floor and A2 still fires — so a mid-week violation is
+real, and must never be waved off as "we're only on Wednesday". The remedy is
+`mc layout <n> --week-start DD-MM --revise` (C1, free, no approval), not an
+override.
+
+**Degraded tier**: with no persisted layout there is nothing to project from,
+so the cumulative rules are suppressed and `mc check` **says so**, naming what
+it stopped judging. Quieter output that hides what it gave up on would be worse
+than the noise it replaced. Same rule-ID sets `mc push` already used
+(`rules.PARTIAL_WEEK_BLOCKING_RULE_IDS` / `LONG_RUN_EVENT_RULE_IDS`, moved into
+`rules.py` so there is one definition). `--actuals-only` forces this tier;
+`--as-of DD-MM` moves the reference day.
+
+`mc drift` needed no change — it is day-granular and pairs proposed against
+actual per row, skipping `PENDING`, so a partial week just contributes fewer
+days to both sides.
 
 ## State lives in a private repo (added 02-08-2026)
 
@@ -75,15 +147,33 @@ Credentials are in **neither** repo. `.env` is local; so is
 `data/.garmin_tokens/`, which holds refresh tokens and is credential material
 however private the repo is.
 
-**One writer per day.** `log/training-log.md`,
+**One writer per day, and it says which device it is** (lease added
+05-08-2026). `mc state --check` catches a checkout that is behind something
+already *pushed*. It cannot catch two rituals **in flight at once** — phone
+and laptop both fetch clean, both write the day, and the second save either
+loses the first or lands on a rejected push. So a write is announced before
+it happens: `mc state --claim "<purpose>"` writes `writer.json` (device, time,
+purpose) into the state repo, commits and pushes it, and refuses if another
+device holds a live one. `mc state --save` clears it in the same commit and
+stamps `Device: <id>` on the history. `mc state --release` for a ritual that
+ends without writing. `MC_DEVICE` names the device (hostname otherwise);
+`MC_LEASE_TTL_MIN` expires a lease (default 120) so an abandoned session on a
+flat phone never locks the laptop out.
+
+The lease is **advisory and only as fresh as the last fetch** — it narrows the
+window to the seconds between claim and push. Say so rather than implying more:
+when `--claim` reports the lease was not pushed, it is not protecting anything.
+The behind-check and git's refusal to merge remain the real backstop.
+
+`log/training-log.md`,
 `data/strength_schedule.json` and `data/pushed.json` are rewritten whole with
 no merge logic — two machines writing the same day loses one of them
 silently, and a lost key in `pushed.json` makes the next push create a
 *duplicate* Garmin workout. Git is the sync layer precisely because it
 refuses to merge that, where a cloud drive would resolve it quietly. So:
-`mc state --check` before `/daily`, `/week`, `/preview`; `mc state --save
-"..."` after. The guard is enforced, not merely documented — if it refuses,
-pull. Never work around it.
+`mc state --claim "..."` before `/daily`, `/week`, `/preview`; `mc state
+--save "..."` after. The guard is enforced, not merely documented — if it
+refuses, pull (behind) or wait (lease). Never work around it.
 
 ## Shin self-check & fixed strength (added 29-07-2026)
 

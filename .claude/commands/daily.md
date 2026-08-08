@@ -2,12 +2,30 @@ Run the daily training ritual for marathon-2026. Follow this sequence exactly.
 
 ## 0. State guard
 
-Run `mc state --check` first. If it refuses, the private state repo is behind
-its remote — another machine wrote training history you don't have. **Stop and
-pull.** Do not work around it: `training-log.md`, `strength_schedule.json` and
-`pushed.json` are rewritten whole with no merge logic, so writing from a stale
-copy deletes the other machine's day silently. (No-op when `MC_STATE_DIR`
-isn't set.)
+Run `mc state --claim "daily DD-MM"` first. It runs the staleness check and
+then announces this device as today's writer.
+
+If it refuses, read *which* refusal it is:
+
+- **behind its remote** — another machine wrote training history you don't
+  have. **Stop and pull.** Do not work around it: `training-log.md`,
+  `strength_schedule.json` and `pushed.json` are rewritten whole with no merge
+  logic, so writing from a stale copy deletes the other machine's day
+  silently.
+- **another device holds the writer lease** — a ritual is in flight
+  *elsewhere right now* (typically: the phone). Nothing is pushed yet, so
+  there is nothing to pull; the answer is to finish it there, not to take it
+  over. Only `--force` when you know that session is dead, and say out loud
+  that you did.
+- **this device already holds one** — a previous ritual on this machine never
+  reached `mc state --save`. Say so; it usually means the last `/daily` or
+  `/preview` was abandoned half-written.
+
+If `--claim` prints a warning that the lease was **not pushed**, repeat it to
+me verbatim: the other device cannot see it, so writing now is unguarded.
+
+(No-op on the git side when `MC_STATE_DIR` isn't set; the lease still applies
+locally, where it catches two sessions on one machine.)
 
 ## 1. Sync and digest
 
@@ -108,6 +126,16 @@ with a caveat — propose a compliant alternative instead (per the top of
 that requires an explicit typed `OVERRIDE: <reason>` from me — never assume
 one just because I said I feel good or tired.
 
+`mc check` judges the week **as proposed**: actuals for the days already
+settled, the persisted layout for the days still ahead. So a mid-week finding
+is a real finding, not an artifact of an incomplete week — **do not dismiss it
+as "we're only on Wednesday"**. The remedy for a week that no longer adds up is
+`mc layout <n> --week-start DD-MM --revise` (C1, free), not an override.
+
+If it prints **Degraded check**, no layout is set for this week and the
+cumulative rules (A2/A9/A10 and friends) are not being judged at all. Say so in
+the output rather than reporting a clean check — and run `mc layout` to fix it.
+
 ## 5. Write `out/today.md`
 
 Follow the exact format from spec §8:
@@ -175,8 +203,12 @@ Terse. No motivational filler. No emoji beyond ✅/⚠️/❌ verdict markers an
 ⚠️ warning line. Units are miles and min/mile. If behind, the first line says
 so plainly (§6 E3) — never soften it.
 
-`/daily` writes `out/today.md` only — no HTML rendering (read on GitHub as
-markdown; run `mc render --all` yourself if you ever want the HTML twin).
+`/daily` writes `out/today.md` — markdown only. Then run `mc render --all`,
+which refreshes `out/dashboard.md` (so the completion percentages and finished
+runs move every day, not just on Mondays), deletes anything in `out/` whose day
+has passed, and exports if `MC_EXPORT_DIR` is set. It writes **no HTML** —
+that's `--html`, and nothing in the ritual passes it.
+
 Append a summary line to
 `log/sessions/YYYY-MM-DD.md` via `mc log "<summary>"`, and record the day's
 prescription in `log/training-log.md` via `mc propose "<today's session>"`
@@ -187,8 +219,11 @@ something else, or skipped it, without having to ask again.
 
 Finally, run `mc state --save "daily DD-MM"` to commit and push today's state.
 This is what makes the day visible to any other machine — skipping it leaves
-the next `/daily` there working from history that looks complete but isn't.
-(No-op when `MC_STATE_DIR` isn't set.)
+the next `/daily` there working from history that looks complete but isn't,
+**and leaves this device holding the writer lease**, which will block the
+other one until it expires. If the ritual ends without writing anything
+(a D-rule stop, say), still run `mc state --release`.
+(The commit records `Device: <id>`; no-op when `MC_STATE_DIR` isn't set.)
 
 ## Reason codes (closed set, §6 E1)
 

@@ -17,5 +17,9 @@ data/*
 /out/
 /log/
 
+# writer lease — belongs to the *state* repo, where it is committed so the
+# other device can see it. Here (MC_STATE_DIR unset) it is local scratch.
+/writer.json
+
 # os
 .DS_Store

@@ -230,16 +230,36 @@ class WeekActuals:
     has_started: bool
 
 
-def actuals_for_plan_week(
-    garmin_activities: list[dict[str, Any]], week_start: date, week_end: date, *, as_of: date | None = None
-) -> WeekActuals:
-    """Shared by cli.py (mc check/status/week) and render.py's dashboard —
-    written once here rather than duplicated, since both need the same
-    'what actually happened in this specific Mon-Sun plan week' computation,
-    distinct from rolling_run_volume's trailing-N-days window."""
-    as_of = as_of or date.today()
-    long_run, run_miles, cross_minutes = 0.0, 0.0, 0.0
-    run_days: set[date] = set()
+@dataclass
+class DayActuals:
+    """One day's worth of what actually happened.
+
+    `ran` is deliberately separate from `run_miles > 0`: a run day with no
+    distance recorded (treadmill without a footpod, a lost GPS lock) still
+    happened, and A10 counts running *days*. Collapsing the two would quietly
+    drop it.
+    """
+
+    run_miles: float = 0.0
+    longest_run_mi: float = 0.0
+    cross_minutes: float = 0.0
+    ran: bool = False
+
+
+def actuals_by_day(
+    garmin_activities: list[dict[str, Any]], week_start: date, week_end: date
+) -> dict[str, DayActuals]:
+    """Per-day breakdown of a Mon-Sun plan week, keyed DD-MM.
+
+    Only days with at least one activity get an entry — an absent key means
+    nothing was logged, which is what lets planning.project_week tell a rest
+    day apart from a missed one by consulting the layout.
+
+    This is the single place Garmin activities get classified into
+    run/cross buckets for a plan week; actuals_for_plan_week aggregates it
+    rather than repeating the loop.
+    """
+    days: dict[str, DayActuals] = {}
     for a in garmin_activities:
         dt = _garmin_local_start(a)
         if dt is None or not (week_start <= dt.date() <= week_end):
@@ -249,19 +269,33 @@ def actuals_for_plan_week(
         )
         dist_m = a.get("distance")
         dur_s = a.get("duration")
+        key = dt.date().strftime("%d-%m")
+        day = days.setdefault(key, DayActuals())
         if bucket == "run":
             if dist_m:
                 mi = dist_m / sync.MILE_M
-                run_miles += mi
-                long_run = max(long_run, mi)
-            run_days.add(dt.date())
+                day.run_miles += mi
+                day.longest_run_mi = max(day.longest_run_mi, mi)
+            day.ran = True
         elif bucket in ("cross", "bike", "row") and dur_s:
-            cross_minutes += dur_s / 60
+            day.cross_minutes += dur_s / 60
+    return days
+
+
+def actuals_for_plan_week(
+    garmin_activities: list[dict[str, Any]], week_start: date, week_end: date, *, as_of: date | None = None
+) -> WeekActuals:
+    """Shared by cli.py (mc check/status/week) and render.py's dashboard —
+    written once here rather than duplicated, since both need the same
+    'what actually happened in this specific Mon-Sun plan week' computation,
+    distinct from rolling_run_volume's trailing-N-days window."""
+    as_of = as_of or date.today()
+    by_day = actuals_by_day(garmin_activities, week_start, week_end)
     return WeekActuals(
-        long_run_mi=round(long_run, 1),
-        run_miles=round(run_miles, 1),
-        run_days=len(run_days),
-        cross_minutes=round(cross_minutes),
+        long_run_mi=round(max((d.longest_run_mi for d in by_day.values()), default=0.0), 1),
+        run_miles=round(sum(d.run_miles for d in by_day.values()), 1),
+        run_days=sum(1 for d in by_day.values() if d.ran),
+        cross_minutes=round(sum(d.cross_minutes for d in by_day.values())),
         has_started=week_start <= as_of,
     )
 

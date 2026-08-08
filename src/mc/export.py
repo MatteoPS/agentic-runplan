@@ -17,6 +17,12 @@ Two properties worth preserving:
   being silently resolved by a cloud drive.
 - **Off by default.** No `MC_EXPORT_DIR` means no export, silently. An unset
   optional feature is not an error.
+
+Known limitation, stated rather than fixed: the copy is *additive*. A file
+`mc tidy` deletes from `out/` stays behind in the destination, where it will
+look current. Deleting inside someone's synced cloud folder is a bigger
+promise than this module should make on its own, so it is left to the person
+who set `MC_EXPORT_DIR`.
 """
 
 from __future__ import annotations
@@ -28,9 +34,11 @@ from pathlib import Path
 
 from mc import config as cfg
 
-# today.md rides along with the HTML: it's the same content, but readable in
-# any plain-text editor on the phone if the HTML renders badly.
-EXPORT_PATTERNS = ("*.html", "today.md")
+# Markdown is the primary artifact now that HTML is opt-in (`mc render
+# --html`), so ship whatever out/ actually holds rather than naming files.
+# `mc tidy` has already removed anything stale by the time export runs, which
+# is what makes the broad glob safe: out/ is the filter.
+EXPORT_PATTERNS = ("*.md", "*.html")
 
 
 class ExportError(Exception):

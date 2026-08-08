@@ -2,6 +2,11 @@ I will paste travel dates (unplanned trip, not the known Italy block —
 that's `/italy`). Re-lay-out the affected week(s) under §6B, the long-run
 shuffling machinery, and show a clear before/after.
 
+This rewrites the persisted day layout and can touch `log/`, so take the
+writer lease first — `mc state --claim "travel reshuffle"` — and
+`mc state --save "travel reshuffle DD-MM"` once the new layout is agreed.
+Refusals mean the same three things as in `/daily` step 0.
+
 For each affected week:
 
 1. Load `plan/plan.lock.json` for the week(s) in question and the adjacent

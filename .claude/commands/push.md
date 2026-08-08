@@ -9,6 +9,13 @@ substitution table, e.g. "elliptical", "bike"). Without `--option`, it pushes
 whatever's on the "## Today —" line. Elliptical/bike push as their own
 Garmin workout type (cardio_training / cycling), not disguised as a run.
 
+`mc push` writes `data/pushed.json`, which is one of the whole-file rewrites —
+and the one whose loss is worst, because a missing key makes the next push
+create a **duplicate** Garmin workout instead of updating in place. So take
+the writer lease first: `mc state --claim "push DD-MM"`, and
+`mc state --save "push DD-MM"` after (or `mc state --release` if you end up
+pushing nothing). Refusals mean the same three things as in `/daily` step 0.
+
 For each day in range:
 
 1. Confirm `out/today.md` exists and is dated for that day — if it isn't

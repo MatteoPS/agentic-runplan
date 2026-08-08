@@ -21,6 +21,7 @@ from mc import rules as rules_mod
 from mc import strength as strength_mod
 from mc import state as state_mod
 from mc import sync as sync_mod
+from mc import tidy as tidy_mod
 from mc import traininglog as tlog_mod
 from mc import weather as weather_mod
 
@@ -208,25 +209,74 @@ def status():
 
 
 @app.command()
-def check():
-    """Run rules.py on the current week, print violations.
+def check(
+    as_of_s: str = typer.Option(None, "--as-of", help="DD-MM to check as of (default today)"),
+    actuals_only: bool = typer.Option(
+        False, "--actuals-only", help="Judge only what has happened, ignoring the rest of the week"
+    ),
+):
+    """Run §6 on the week as proposed: actuals for the days already elapsed,
+    the persisted layout for the days still ahead.
 
-    A2/A9/A10 are end-of-week metrics — early in the week, actual-so-far
-    will naturally look short of plan. This isn't a violation of anything
-    yet, just an incomplete week, so that context is printed alongside any
-    findings rather than presenting a Tuesday as if it were a broken week.
+    §6's A-rules are whole-week metrics. Judging actuals-so-far against them
+    made every mid-week run report violations that were arithmetic rather
+    than findings — a build week's 95% floor cannot be met on a Tuesday. The
+    blend asks the question that is actually decidable today: finish the week
+    as laid out, and does it pass? A skipped session still drags the
+    projection under the floor, so real findings survive.
     """
     p = plan_mod.load_plan()
-    week = _current_week(p)
-    actuals = _actuals_for(p, week)
+    as_of = _parse_ddmm(as_of_s) if as_of_s else date.today()
+    week = _current_week(p, as_of)
     week_end = week.wc + timedelta(days=6)
-    days_remaining = max(0, (week_end - date.today()).days)
-    if days_remaining > 0:
+    activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
+    layout = layout_mod.get_layout(layout_mod.week_start_for(as_of))
+
+    if layout is not None and not actuals_only:
+        by_day = digest_mod.actuals_by_day(activities, week.wc, week_end)
+        projection = planning_mod.project_week(week, layout, by_day, as_of)
+        block = p.block_for(week)
+        floor_mi = block.compliance_floor * week.run_miles
+        console.print(f"[bold]Week {week.week} · w/c {week.wc.strftime('%d-%m')}[/bold] — projected")
         console.print(
-            f"[dim]Week in progress — {days_remaining} day(s) remaining until "
-            f"{week_end.strftime('%d-%m')}. Findings below reflect where things "
-            f"stand today, not a final result.[/dim]"
+            f"  actual    {projection.banked_miles:g} mi over "
+            f"{len(projection.elapsed_days)} day(s) already settled"
         )
+        console.print(
+            f"  remaining {projection.remaining_miles:g} mi over "
+            f"{len(projection.remaining_days)} day(s) still to run, per layout"
+            + (f" ({', '.join(projection.remaining_days)})" if projection.remaining_days else "")
+        )
+        console.print(
+            f"  projected {projection.proposed.run_miles:g} mi vs plan {week.run_miles:g} mi "
+            f"· floor {floor_mi:.1f} mi ({block.compliance_floor:.0%})"
+        )
+        result = rules_mod.check_week(projection.proposed, p)
+        if result.allowed:
+            console.print("[green]No violations.[/green]")
+        else:
+            for v in result.violations:
+                console.print(f"[red]{v.rule_id}[/red] ({v.category}): {v.message}")
+            # The week as laid out does not pass. That is a layout problem,
+            # and reordering/resizing easy runs is C1 — free, no approval.
+            console.print(
+                f"[dim]The week as laid out does not pass. Revise it: "
+                f"mc layout {week.week} --week-start {layout.week_start} --revise "
+                f'--set "DD-MM:mi:type,..." — not an override.[/dim]'
+            )
+        raise typer.Exit(0 if result.allowed else 1)
+
+    # Degraded tier: no layout to project the rest of the week from, so the
+    # cumulative end-of-week rules can only produce noise. Suppress them and
+    # say so — a quieter check that doesn't admit what it stopped checking is
+    # worse than the noisy one it replaced.
+    actuals = digest_mod.actuals_for_plan_week(activities, week.wc, week_end, as_of=as_of)
+    reason = (
+        "--actuals-only"
+        if actuals_only
+        else f"no layout set for w/c {layout_mod.week_start_for(as_of)}"
+    )
+    console.print(f"[yellow]Degraded check — {reason}.[/yellow]")
     proposed = rules_mod.ProposedWeek(
         week=week.week,
         long_run_mi=actuals.long_run_mi,
@@ -234,7 +284,22 @@ def check():
         run_days=actuals.run_days,
         cross_minutes=actuals.cross_minutes,
     )
-    result = rules_mod.check_week(proposed, p)
+    full = rules_mod.check_week(proposed, p)
+    long_run_day_passed = as_of >= week_end
+    blocking_ids = rules_mod.PARTIAL_WEEK_BLOCKING_RULE_IDS
+    if not long_run_day_passed:
+        blocking_ids = blocking_ids - rules_mod.LONG_RUN_EVENT_RULE_IDS
+    suppressed = [v for v in full.violations if v.rule_id not in blocking_ids]
+    result = rules_mod.RuleResult.from_violations(
+        [v for v in full.violations if v.rule_id in blocking_ids]
+    )
+    console.print(
+        f"[dim]Cumulative rules ({', '.join(sorted(rules_mod.ALL_A_RULE_IDS - blocking_ids))}) "
+        f"are not being judged — they need a full week. "
+        f"Run mc layout in /week for the projected check.[/dim]"
+    )
+    if suppressed:
+        console.print(f"[dim]Suppressed here: {', '.join(sorted({v.rule_id for v in suppressed}))}.[/dim]")
     if result.allowed:
         console.print("[green]No violations.[/green]")
     else:
@@ -335,11 +400,33 @@ def _parse_day_miles(spec: str) -> dict[str, float]:
 def state_cmd(
     check_: bool = typer.Option(False, "--check", help="Refuse to proceed if state is stale (run before /daily)"),
     save: str = typer.Option(None, "--save", help="Commit and push state with this message (run after /daily)"),
+    claim: str = typer.Option(
+        None, "--claim", help="Take the writer lease for this purpose, e.g. 'daily 05-08' (run before /daily writes)"
+    ),
+    release_: bool = typer.Option(False, "--release", help="Drop the writer lease without saving (abandoned ritual)"),
+    force: bool = typer.Option(False, "--force", help="With --claim: take over a lease held by another device/session"),
 ):
     """Guard and sync the private state repo.
 
-    Without flags, reports where state lives and whether it's in sync.
+    Without flags, reports where state lives, whether it's in sync, and who
+    holds the writer lease.
     """
+    if claim:
+        try:
+            lease, warning = state_mod.claim(claim, force=force)
+        except state_mod.StateError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1) from e
+        console.print(f"[green]writer lease held by[/green] {lease.device} — {lease.purpose}")
+        if warning:
+            console.print(f"[yellow]{warning}[/yellow]")
+        return
+
+    if release_:
+        dropped = state_mod.release()
+        console.print("[green]lease released[/green]" if dropped else "[dim]no lease held[/dim]")
+        return
+
     if save:
         try:
             done = state_mod.save(save)
@@ -356,6 +443,16 @@ def state_cmd(
         raise typer.Exit(1) from e
 
     console.print(f"state root: {st.root}")
+    console.print(f"this device: {state_mod.device_id()}")
+    held = state_mod.read_lease(st.root)
+    if held is None:
+        console.print("[dim]writer lease: free[/dim]")
+    elif held.mine and not held.expired:
+        console.print(f"[yellow]writer lease: held by this device — {held.describe()}[/yellow]")
+    elif held.expired:
+        console.print(f"[dim]writer lease: {held.describe()} — claimable[/dim]")
+    else:
+        console.print(f"[red]writer lease: {held.describe()} — do not write here[/red]")
     if not st.is_split:
         console.print(
             "[dim]Not split — state lives in the code checkout. Set MC_STATE_DIR in .env "
@@ -647,10 +744,10 @@ def _report_export() -> None:
 
 @app.command(name="export")
 def export_cmd():
-    """Copy out/*.html and out/today.md into MC_EXPORT_DIR (a plain local
-    folder — typically one your cloud client already syncs to your phone).
-    Runs automatically as part of `mc render --all`; this is the manual
-    re-copy. No credentials, no network, nothing read back."""
+    """Copy out/*.md and out/*.html into MC_EXPORT_DIR (a plain local folder —
+    typically one your cloud client already syncs to your phone). Runs
+    automatically as part of `mc render --all`; this is the manual re-copy.
+    No credentials, no network, nothing read back."""
     if export_mod.export_dir() is None:
         console.print(
             "[yellow]MC_EXPORT_DIR is not set in .env — export is off.[/yellow]\n"
@@ -660,38 +757,81 @@ def export_cmd():
     _report_export()
 
 
+def _report_tidy(as_of: date | None = None, dry_run: bool = False) -> None:
+    """Never silent — a file deleted without saying so is indistinguishable
+    from one that was never written."""
+    result = tidy_mod.tidy(as_of=as_of, dry_run=dry_run)
+    verb = "would remove" if dry_run else "removed"
+    for removal in result.removed:
+        console.print(f"[dim]{verb} {removal.name} — {removal.reason}[/dim]")
+    for path in result.undated:
+        console.print(
+            f"[yellow]{path.name} declares no day (no `# DD-MM` header, no -DD-MM suffix) "
+            f"— left in place, but nothing can tell whether it's current.[/yellow]"
+        )
+    if dry_run and not result.removed:
+        console.print("[dim]out/ is already clean[/dim]")
+
+
+@app.command(name="tidy")
+def tidy_cmd(
+    dry_run: bool = typer.Option(False, "--dry-run", help="List what would go, delete nothing"),
+    as_of_s: str = typer.Option(None, "--as-of", help="DD-MM to treat as today"),
+):
+    """Delete out/ files whose declared day has passed.
+
+    Runs automatically as part of `mc render --all`; this is the manual pass.
+    """
+    _report_tidy(as_of=_parse_ddmm(as_of_s) if as_of_s else None, dry_run=dry_run)
+
+
 @app.command(name="render")
-def render_cmd(all_: bool = typer.Option(False, "--all", help="Render every .md in out/ plus dashboard.md/.html")):
-    """Markdown -> standalone HTML."""
+def render_cmd(
+    all_: bool = typer.Option(False, "--all", help="Refresh dashboard.md, tidy out/, and export"),
+    html: bool = typer.Option(False, "--html", help="Also write the standalone .html twins"),
+):
+    """Refresh out/'s generated files. Markdown only unless --html.
+
+    HTML used to be produced on every run and read by nobody — /daily and
+    /preview write markdown, and it gets read on GitHub. It stays one flag
+    away rather than being deleted.
+    """
     if all_:
-        paths, skipped = render_mod.render_all()
-        for p_ in paths:
-            console.print(f"rendered {p_}")
-        for p_ in skipped:
-            console.print(
-                f"[yellow]skipped {p_.name} — it's a provisional projection for another day. "
-                f"Re-run /preview to refresh it.[/yellow]"
-            )
+        if html:
+            paths, skipped = render_mod.render_all()
+            for p_ in paths:
+                console.print(f"rendered {p_}")
+            for p_ in skipped:
+                console.print(
+                    f"[yellow]skipped {p_.name} — it's a provisional projection for another day. "
+                    f"Re-run /preview to refresh it.[/yellow]"
+                )
         try:
             plan = plan_mod.load_plan()
             activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
             dash_md = render_mod.write_dashboard_md(plan, activities)
-            console.print(f"rendered {dash_md}")
-            dash = render_mod.write_dashboard(plan, activities)
-            console.print(f"rendered {dash}")
+            console.print(f"wrote {dash_md}")
+            if html:
+                console.print(f"rendered {render_mod.write_dashboard(plan, activities)}")
         except FileNotFoundError:
-            console.print("[yellow]no plan.lock.json — skipping dashboard.md/.html[/yellow]")
-        if not paths:
-            console.print("[yellow]out/ has no .md files yet[/yellow]")
-        # Export rides on --all so /daily covers it with no extra step. Silent
-        # no-op when MC_EXPORT_DIR is unset; loud when it's set but wrong.
+            console.print("[yellow]no plan.lock.json — skipping dashboard[/yellow]")
+        # Tidy after writing, so it judges the mtimes this run just produced —
+        # that is what retires the .html twins once --html stops being passed.
+        _report_tidy()
+        # Export rides on --all so the rituals cover it with no extra step.
+        # Silent no-op when MC_EXPORT_DIR is unset; loud when it's set but wrong.
         _report_export()
-    else:
+    elif html:
         today_md = cfg.OUT_DIR / "today.md"
         if today_md.exists():
             console.print(f"rendered {render_mod.render_file(today_md)}")
         else:
             console.print("[yellow]out/today.md doesn't exist yet — run the daily workflow first, or use --all[/yellow]")
+    else:
+        console.print(
+            "[yellow]Nothing to do — markdown is written by /daily and /preview directly.[/yellow]\n"
+            "[dim]`mc render --all` refreshes the dashboard and tidies out/; add --html for the HTML twins.[/dim]"
+        )
 
 
 @app.command()

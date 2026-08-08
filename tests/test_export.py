@@ -9,6 +9,7 @@ def out_dir(tmp_path):
     d.mkdir()
     (d / "today.md").write_text("# 02-08 · Week 1/14\n")
     (d / "today.html").write_text("<h1>today</h1>")
+    (d / "dashboard.md").write_text("# Dashboard\n")
     (d / "dashboard.html").write_text("<h1>dashboard</h1>")
     return d
 
@@ -36,13 +37,17 @@ def test_env_var_expands_user(monkeypatch):
 # --- copying -----------------------------------------------------------------------
 
 
-def test_copies_html_and_today_md(tmp_path, out_dir):
+def test_copies_every_rendered_artifact(tmp_path, out_dir):
+    """Markdown is the primary artifact now that HTML is opt-in, so the
+    export ships whatever out/ holds — `mc tidy` has already removed anything
+    stale, which is what makes the broad glob safe."""
     dest = tmp_path / "synced" / "marathon"
     dest.parent.mkdir()
     result = export.export(out_dir=out_dir, destination=dest)
     names = {p.name for p in result.copied}
-    assert names == {"today.md", "today.html", "dashboard.html"}
+    assert names == {"today.md", "today.html", "dashboard.md", "dashboard.html"}
     assert (dest / "today.html").read_text() == "<h1>today</h1>"
+    assert (dest / "dashboard.md").read_text() == "# Dashboard\n"
 
 
 def test_creates_leaf_directory_but_not_parents(tmp_path, out_dir):

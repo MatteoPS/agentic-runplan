@@ -204,26 +204,11 @@ def build_workout(week: PlanWeek, session_date: date, session: SessionSpec, easy
 
 # --- rule check before pushing (§9: "Refuse to push any workout that violates §6") --
 
-# A2 (compliance floor), A8/A9 (aerobic-load ratios), A10 (min running days)
-# are cumulative, end-of-week metrics — computed against a partial week they
-# will ALWAYS look "behind" (day 2 of 7 can never hit a weekly floor by
-# definition), which would block every push early in every week regardless
-# of whether today's specific session is actually fine. Hard-blocking a push
-# is reserved for rules a single session can violate on its own, at any
-# point in the week: the protected long run (A3), the taper freeze (A4),
-# stepback top-up (A5), the 105% ceiling (A6), long-run shrink (A1), race
-# date (A7). Cumulative status is `mc check`/`mc status`'s job, tracked
-# across the week's real execution — not re-litigated at every single push.
-_BLOCKING_RULE_IDS = frozenset({"A1", "A3", "A4", "A5", "A6", "A7"})
-
-# A1/A3 are specifically about the week's long-run EVENT. ProposedWeek's
-# long_run_mi field is "the longest run so far this week" — a fine proxy
-# once the week is over, but a false positive before the long run has
-# actually happened (e.g. pushing Tuesday's easy run in a week whose long
-# run is scheduled for Sunday will always look "short" of the long-run
-# target, which has nothing to do with Tuesday). Only enforce these two when
-# the push IS the long run itself.
-_LONG_RUN_ONLY_RULE_IDS = frozenset({"A1", "A3"})
+# Both live in rules.py now — `mc check`'s degraded tier needs the same two
+# sets, and one definition beats two that can drift apart. Aliased here
+# because this module's docstrings and tests refer to them by these names.
+_BLOCKING_RULE_IDS = rules_mod.PARTIAL_WEEK_BLOCKING_RULE_IDS
+_LONG_RUN_ONLY_RULE_IDS = rules_mod.LONG_RUN_EVENT_RULE_IDS
 
 
 def check_before_push(

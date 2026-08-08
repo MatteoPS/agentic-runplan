@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import Enum
 
+from mc import digest as digest_mod
 from mc import layout as layout_mod
 from mc import rules as rules_mod
 from mc import strength as strength_mod
@@ -168,3 +169,105 @@ def lookahead(plan: PlanLock, start: date, days: int = 3) -> Lookahead:
 
 def format_assumptions() -> str:
     return "Assumes: " + ", ".join(PROJECTION_ASSUMPTIONS) + "."
+
+
+# --- the blended week ---------------------------------------------------------------
+# §6's A-rules are whole-week metrics: A2's floor is a fraction of the week's
+# planned miles, A10 wants 3 running days, A1/A3 want the long run to have
+# happened. Checking actuals-so-far against them is a category error -- on a
+# build week (floor 0.95) A2 *cannot* pass before roughly Saturday, so every
+# mid-week `mc check` reported violations that were arithmetic rather than
+# findings. Warnings you dismiss daily are warnings you stop reading.
+#
+# So we check the week that is actually being proposed: days already elapsed at
+# what happened, days still ahead at what the persisted layout says. That is a
+# real proposal -- "if I finish the week as laid out, does it pass?" -- and it
+# stays honest, because a skipped Tuesday drags the projection under the floor
+# and A2 fires for real. The remedy for a real finding is `mc layout --revise`
+# (C1, no approval needed), not an override.
+
+
+@dataclass(frozen=True)
+class WeekProjection:
+    """Actuals for elapsed days + layout for the days still ahead."""
+
+    proposed: rules_mod.ProposedWeek
+    banked_miles: float  # elapsed days, actual
+    remaining_miles: float  # days ahead, per layout
+    elapsed_days: list[str]  # DD-MM
+    remaining_days: list[str]  # DD-MM
+
+    @property
+    def long_run_done(self) -> bool:
+        return self.proposed.long_run_mi > 0 and not self.remaining_days
+
+
+def project_week(
+    week: PlanWeek,
+    layout: layout_mod.WeekLayout,
+    day_actuals: dict[str, digest_mod.DayActuals],
+    as_of: date,
+) -> WeekProjection:
+    """Blend a week's actuals with its remaining layout into one ProposedWeek.
+
+    Per day: anything before `as_of` counts what actually happened (0.0 when
+    nothing was logged -- a miss is real and should show). `as_of` and later
+    count the layout, *unless* that day already has a logged activity, in
+    which case actuals win. That last clause matters twice: /preview runs in
+    the evening after the session, and a day run longer than planned should
+    count what was run rather than what was intended.
+    """
+    banked = remaining = 0.0
+    cross = 0.0
+    elapsed: list[str] = []
+    ahead: list[str] = []
+    run_days = 0
+    longest_actual = 0.0
+    planned_long_ahead = 0.0
+
+    for day in layout.days:
+        actual = day_actuals.get(day.day)
+        is_past = _ddmm_before(day.day, as_of)
+        use_actual = actual is not None or is_past
+
+        if use_actual:
+            miles = actual.run_miles if actual else 0.0
+            banked += miles
+            elapsed.append(day.day)
+            cross += actual.cross_minutes if actual else 0.0
+            if actual:
+                longest_actual = max(longest_actual, actual.longest_run_mi)
+                if actual.ran:
+                    run_days += 1
+        else:
+            remaining += day.miles
+            ahead.append(day.day)
+            cross += day.cross_minutes
+            if day.is_running and day.miles > 0:
+                run_days += 1
+            if day.day == layout.long_run_day:
+                planned_long_ahead = day.miles
+
+    # A1/A3 ask whether the week's long run happens at its planned distance.
+    # Once its day is behind us and it did not, the shortfall is the finding --
+    # so the layout's figure only counts while that day is still ahead.
+    long_run_mi = max(longest_actual, planned_long_ahead)
+
+    return WeekProjection(
+        proposed=rules_mod.ProposedWeek(
+            week=week.week,
+            long_run_mi=round(long_run_mi, 2),
+            run_miles=round(banked + remaining, 2),
+            run_days=run_days,
+            cross_minutes=round(cross, 2),
+        ),
+        banked_miles=round(banked, 2),
+        remaining_miles=round(remaining, 2),
+        elapsed_days=elapsed,
+        remaining_days=ahead,
+    )
+
+
+def _ddmm_before(ddmm: str, as_of: date) -> bool:
+    day, month = ddmm.split("-")
+    return date(as_of.year, int(month), int(day)) < as_of

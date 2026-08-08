@@ -78,6 +78,36 @@ class ProposedWeek(BaseModel):
     cross_minutes: float = 0.0
 
 
+# --- partial-week rule filtering -----------------------------------------------
+# Used wherever a *partial* week has to be judged and no full-week proposal is
+# available: `mc push` (one session projected onto actuals-to-date) and
+# `mc check`'s degraded tier (no persisted layout to project the rest of the
+# week from). Where a layout *does* exist, prefer planning.project_week and
+# check the blended week in full — these sets suppress real findings as well
+# as false ones, so they are the fallback, never the default.
+
+# A2 (compliance floor), A8/A9 (aerobic-load ratios), A10 (min running days)
+# are cumulative, end-of-week metrics — computed against a partial week they
+# will ALWAYS look "behind" (day 2 of 7 can never hit a weekly floor by
+# definition). What survives is the rules a single session can violate on its
+# own at any point in the week: long-run shrink (A1), the protected long run
+# (A3), the taper freeze (A4), stepback top-up (A5), the 105% ceiling (A6),
+# race date (A7).
+PARTIAL_WEEK_BLOCKING_RULE_IDS = frozenset({"A1", "A3", "A4", "A5", "A6", "A7"})
+
+# A1/A3 are specifically about the week's long-run EVENT. ProposedWeek's
+# long_run_mi field is "the longest run so far this week" — a fine proxy once
+# the week is over, but a false positive before the long run has actually
+# happened (a Tuesday easy run in a week whose long run is Sunday will always
+# look "short" of the long-run target, which has nothing to do with Tuesday).
+# Only enforce these two once the long run is the thing being judged.
+LONG_RUN_EVENT_RULE_IDS = frozenset({"A1", "A3"})
+
+# Every A-rule check_week can return, so a degraded check can name exactly
+# what it stopped judging rather than leaving the caller to infer it.
+ALL_A_RULE_IDS = frozenset({f"A{n}" for n in range(1, 11)})
+
+
 def _cross_mi_equiv(cross_minutes: float) -> float:
     return cross_minutes / EASY_PACE_MIN_PER_MI * ELLIPTICAL_TRANSFER
 

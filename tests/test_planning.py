@@ -131,3 +131,107 @@ def test_running_past_the_end_of_the_plan_stops_rather_than_extrapolating(synthe
     look = planning.lookahead(synthetic_plan, last, days=14)
     assert len(look.days) == 7  # the final week only
     assert max(d.date for d in look.days) == last + timedelta(days=6)
+
+
+# --- the blended week: actuals for elapsed days, layout for the rest ----------------
+# The regression these guard: §6's A-rules are whole-week metrics, so judging
+# actuals-so-far against them made every mid-week `mc check` report violations
+# that were arithmetic rather than findings.
+
+
+def day_actuals(**by_day: tuple[float, bool]) -> dict:
+    """{"28-07": (4.0, True)} -> {"28-07": DayActuals(run_miles=4.0, ...)}"""
+    from mc.digest import DayActuals
+
+    return {
+        d: DayActuals(run_miles=mi, longest_run_mi=mi, ran=ran)
+        for d, (mi, ran) in by_day.items()
+    }
+
+
+def test_full_compliance_midweek_projects_the_whole_planned_week(synthetic_plan):
+    """Everything through Wednesday done as planned: the projection is the
+    full 20mi week, so A2's 95% floor passes. This is the false warning that
+    started it. Note the Monday cross session has to be there — week 1's plan
+    leans on it to stay under A9's long-run ratio cap."""
+    from mc.digest import DayActuals
+
+    wl = set_week_1_layout()
+    week = synthetic_plan.week_by_number(1)
+    actuals = day_actuals(**{"28-07": (4.0, True), "29-07": (4.0, True)})
+    actuals["27-07"] = DayActuals(cross_minutes=45.0)
+    proj = planning.project_week(week, wl, actuals, date(2026, 7, 30))
+    assert proj.banked_miles == 8.0
+    assert proj.remaining_miles == 12.0  # 31-07 easy 4 + 02-08 long 8
+    assert proj.proposed.run_miles == 20.0
+    assert proj.proposed.long_run_mi == 8.0  # from the layout — its day is still ahead
+    assert proj.proposed.run_days == 4
+    from mc import rules
+
+    assert rules.check_week(proj.proposed, synthetic_plan).allowed
+
+
+def test_a_skipped_elapsed_day_is_a_real_shortfall(synthetic_plan):
+    """The point of the blend: it silences arithmetic, not findings. Tuesday
+    missed entirely and the week no longer reaches its floor."""
+    wl = set_week_1_layout()
+    week = synthetic_plan.week_by_number(1)
+    proj = planning.project_week(week, wl, day_actuals(), date(2026, 7, 30))
+    assert proj.banked_miles == 0.0  # 28-07 and 29-07 both passed unrun
+    assert proj.proposed.run_miles == 12.0
+    from mc import rules
+
+    result = rules.check_week(proj.proposed, synthetic_plan)
+    assert not result.allowed
+    assert "A2" in {v.rule_id for v in result.violations}
+
+
+def test_long_run_day_passed_unrun_stops_counting_toward_a1(synthetic_plan):
+    """Once the long-run day is behind you and it didn't happen, the shortfall
+    is the finding — the layout's figure must not paper over it."""
+    wl = set_week_1_layout()
+    week = synthetic_plan.week_by_number(1)
+    actuals = day_actuals(**{"28-07": (4.0, True), "29-07": (4.0, True), "31-07": (4.0, True)})
+    proj = planning.project_week(week, wl, actuals, date(2026, 8, 3))
+    assert proj.proposed.long_run_mi == 4.0  # longest actual, not the planned 8
+    from mc import rules
+
+    assert "A1" in {v.rule_id for v in rules.check_week(proj.proposed, synthetic_plan).violations}
+
+
+def test_actuals_beat_the_layout_on_a_day_already_run(synthetic_plan):
+    """/preview runs in the evening, after the session. A day run longer than
+    planned counts what was run."""
+    wl = set_week_1_layout()
+    week = synthetic_plan.week_by_number(1)
+    actuals = day_actuals(**{"31-07": (6.0, True)})  # planned 4, ran 6
+    proj = planning.project_week(week, wl, actuals, date(2026, 7, 31))
+    assert "31-07" in proj.elapsed_days
+    assert "31-07" not in proj.remaining_days
+    assert proj.banked_miles == 6.0
+
+
+def test_rest_days_are_not_counted_as_missed(synthetic_plan):
+    """A planned rest day contributes 0 whether it is past or future — an
+    absent actual on a rest day is compliance, not a gap."""
+    wl = set_week_1_layout()
+    week = synthetic_plan.week_by_number(1)
+    proj = planning.project_week(week, wl, day_actuals(), date(2026, 8, 3))
+    assert proj.proposed.run_miles == 0.0
+    assert proj.proposed.run_days == 0
+
+
+def test_cross_minutes_blend_from_both_sides(synthetic_plan):
+    """Week 1's layout opens with a 45-minute cross day; it counts from the
+    layout while ahead, and from actuals once it has happened."""
+    wl = set_week_1_layout()
+    week = synthetic_plan.week_by_number(1)
+    ahead = planning.project_week(week, wl, day_actuals(), date(2026, 7, 27))
+    assert ahead.proposed.cross_minutes == 45.0
+
+    from mc.digest import DayActuals
+
+    done = planning.project_week(
+        week, wl, {"27-07": DayActuals(cross_minutes=30.0)}, date(2026, 7, 28)
+    )
+    assert done.proposed.cross_minutes == 30.0

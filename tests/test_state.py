@@ -118,3 +118,112 @@ def test_save_with_nothing_to_commit_is_a_no_op(split):
 def test_save_is_a_no_op_when_state_is_not_split(monkeypatch, tmp_path):
     monkeypatch.setattr(cfg, "state_is_split", lambda: False)
     assert state.save("msg", tmp_path) is None
+
+
+# --- the writer lease: two rituals in flight at once --------------------------------
+
+
+@pytest.fixture
+def as_laptop(monkeypatch):
+    monkeypatch.setenv("MC_DEVICE", "laptop")
+
+
+def as_device(monkeypatch, name):
+    monkeypatch.setenv("MC_DEVICE", name)
+
+
+def test_device_id_prefers_mc_device(monkeypatch):
+    monkeypatch.setenv("MC_DEVICE", "phone")
+    assert state.device_id() == "phone"
+
+
+def test_device_id_falls_back_to_hostname(monkeypatch):
+    monkeypatch.delenv("MC_DEVICE", raising=False)
+    assert state.device_id()  # never anonymous
+
+
+def test_claim_writes_commits_and_pushes_the_lease(split, as_laptop):
+    lease, warning = state.claim("daily 05-08", split["laptop"])
+    assert lease.device == "laptop" and not warning
+
+    git(split["phone"], "pull", "-q")
+    seen = state.read_lease(split["phone"])
+    assert seen is not None and seen.device == "laptop"
+    assert seen.purpose == "daily 05-08"
+
+
+def test_a_live_lease_from_another_device_blocks_the_check(split, monkeypatch):
+    """The case the behind-check cannot see: the phone is *mid-ritual* and has
+    not saved anything yet, so there is nothing to be behind."""
+    as_device(monkeypatch, "phone")
+    state.claim("daily 05-08", split["phone"])
+
+    git(split["laptop"], "pull", "-q")
+    as_device(monkeypatch, "laptop")
+    with pytest.raises(state.StateError, match="Another device holds the writer lease"):
+        state.check(split["laptop"])
+
+
+def test_same_device_second_session_is_refused(split, as_laptop):
+    """Two Claude sessions on one machine share a working tree — the git
+    guard is blind to that, the lease is not."""
+    state.claim("daily 05-08", split["laptop"])
+    with pytest.raises(state.StateError, match="already holds a writer lease"):
+        state.claim("preview 05-08", split["laptop"])
+
+
+def test_force_takes_over(split, as_laptop):
+    state.claim("daily 05-08", split["laptop"])
+    lease, warning = state.claim("preview 05-08", split["laptop"], force=True)
+    assert lease.purpose == "preview 05-08"
+    del warning  # same device taking over itself needs no warning
+
+
+def test_an_expired_lease_does_not_lock_the_other_device_out(split, monkeypatch):
+    """A ritual abandoned on a flat phone must not cost the laptop tomorrow."""
+    as_device(monkeypatch, "phone")
+    state.claim("daily 05-08", split["phone"])
+    git(split["laptop"], "pull", "-q")
+
+    monkeypatch.setenv("MC_LEASE_TTL_MIN", "0")
+    as_device(monkeypatch, "laptop")
+    st = state.check(split["laptop"])
+    assert st.safe_to_write
+    lease, warning = state.claim("daily 06-08", split["laptop"])
+    assert lease.device == "laptop"
+    assert warning and "phone" in warning
+
+
+def test_save_releases_the_lease_and_records_the_device(split, as_laptop):
+    state.claim("daily 05-08", split["laptop"])
+    (split["laptop"] / "log" / "training-log.md").write_text("# Training log\n\n| 05-08 | 5mi | done |\n")
+    assert state.save("daily 05-08", split["laptop"]) == "daily 05-08"
+
+    assert state.read_lease(split["laptop"]) is None
+    body = subprocess.run(
+        ["git", "-C", str(split["laptop"]), "log", "-1", "--format=%B"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert "Device: laptop" in body
+
+    git(split["phone"], "pull", "-q")
+    assert state.read_lease(split["phone"]) is None  # cleared for the other device too
+
+
+def test_a_stale_lease_file_is_treated_as_no_lease(split, as_laptop):
+    """Fail open onto the behind-check rather than bricking on a bad byte."""
+    state.lease_path(split["laptop"]).write_text("{not json")
+    assert state.read_lease(split["laptop"]) is None
+    assert state.check(split["laptop"]).safe_to_write
+
+
+def test_lease_works_without_git(monkeypatch, tmp_path):
+    """Unsplit setup: no repo, no remote, but two local sessions still collide."""
+    monkeypatch.setattr(cfg, "STATE_ROOT", tmp_path)
+    monkeypatch.setattr(cfg, "state_is_split", lambda: False)
+    as_device(monkeypatch, "laptop")
+    state.claim("daily 05-08", tmp_path)
+    with pytest.raises(state.StateError, match="already holds"):
+        state.claim("daily 05-08", tmp_path)
+    assert state.release(tmp_path)
+    assert state.read_lease(tmp_path) is None

@@ -1,6 +1,8 @@
-Monday review for marathon-2026. Run `mc state --check` first — if the
-private state repo is behind, pull before doing anything else, or this
-review is written against history that's missing another machine's days.
+Monday review for marathon-2026. Run `mc state --claim "week review w/c DD-MM"`
+first — if the private state repo is behind, pull before doing anything else,
+or this review is written against history that's missing another machine's
+days; if another device holds the writer lease, a ritual is in flight there
+and this one must wait (see `/daily` step 0 for the three refusals).
 Then `mc sync` and `mc digest`, so everything below reflects real data, not
 stale cache.
 
@@ -73,5 +75,9 @@ Produce a review covering:
 Units are miles and min/mile. Weeks are `Week N · w/c DD-MM`. Days are
 `DD-MM`. Terse — this is a working review, not a narrative.
 
+Run `mc render --all` once the layout is set — it refreshes `out/dashboard.md`
+against the new week and clears anything in `out/` whose day has passed. No
+HTML unless you pass `--html`.
+
 Finish with `mc state --save "week review w/c DD-MM"` so the layout, strength
-days and review are committed and pushed.
+days and review are committed and pushed, and the writer lease is released.

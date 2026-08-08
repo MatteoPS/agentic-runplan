@@ -5,6 +5,10 @@ pre-planned with reduced targets precisely so it doesn't need 15 repeated
 overrides; use this command to reconcile reality against that plan, not to
 renegotiate it from scratch each time.
 
+0. `mc state --claim "italy reconcile"` before anything is written, and
+   `mc state --save "italy reconcile DD-MM"` at the end. Refusals mean the
+   same three things as in `/daily` step 0 — and this block is exactly when
+   the phone is likely to be the writing device.
 1. `mc sync` then `mc week --week 7`, `--week 8`, `--week 9`, `--week 10` to
    see planned vs. actual for the whole block so far.
 2. Ask me (only what isn't already in the digest): what actually
