@@ -337,6 +337,30 @@ pass the flag.
 
 Neither is medical advice (D6).
 
+## Long-run days are routed in advance (added 11-08-2026)
+
+**`context/long-run-routing.md`** holds the agreed long-run date for every week
+from 15-08 to the 20-miler on 11-10, the reasoning behind the non-obvious
+placements, and the Italy arithmetic. Read by `/daily` and `/week` with the rest
+of `context/`.
+
+It exists because the natural places to write this down do not survive to the
+day they matter: `mc tidy` deletes `out/today.md` once its day passes, and
+`log/sessions/` drops out of `/daily`'s 14-day read window long before
+September. A routing decision taken in August has to still be readable in
+October, so it lives in `context/` alongside `downhill.md`.
+
+The three findings most easily undone by accident: week 6's 18 **leaves Sun
+06-09** for Thu 03-09 (left on Sunday it is 3 days from the 15 on Wed 09-09, a
+hard B3 reject); **no 16-miler is reachable anywhere in Italy** (A6 caps week 8
+at 19.95mi, A9 caps the long run at 64% of that = 12.8mi); and in Italy the long
+run may **shrink to anything but must never be skipped** — A1 and A10 are both
+switched off there, but B3 still needs a longest-run-of-the-week every 5-10 days,
+and dropping either Italy long run opens a 15-16 day gap.
+
+Long-run *distances* stay frozen in `plan.lock.json`; this file fixes only the
+**day**, which is B1/C1 and needs no approval.
+
 ## §4 verdict vocabulary — fixed, never invent new labels
 
 `✅ good substitute` · `⚠️ aerobic only` · `❌ not recommended` ·
