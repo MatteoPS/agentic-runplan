@@ -416,6 +416,142 @@ def best_window(windows: list[Window]) -> Window | None:
     )
 
 
+# --- sub-windows: where inside a window a *short* session should go -----------------
+#
+# The worst-hour rule above is right for a long run, which is a commitment to be
+# outside for the whole window, and wrong for a 35-minute easy run, which does
+# not occupy a window — it is *placed* inside one.
+#
+# The failure it caused, 11-08-2026: the evening window for 12-08 read 86°F, its
+# 17:00-19:00 plateau. Sunset was ~20:00 and the 20:15 slot the run would
+# actually use was 80°F. A start time was called off the 86, the athlete
+# questioned it, and the hourly numbers had to be dug out of the raw cache by
+# hand to settle it. Nothing in the output hinted that the window average hid a
+# 6°F cliff.
+#
+# So: when the hours *inside* a window vary enough that the choice of start time
+# within it changes the answer, say so and name the coolest slot. This reports a
+# fact and stops — which slot to use is still a judgement made in `/daily` and
+# `/preview`, like everything else this module emits.
+
+# A short session plus its warmup fits in an hour. A slot starting at hour H is
+# therefore bounded by the samples at H and H+1, the same inclusive-both-ends
+# convention windows_for_day uses — being outside from 20:00 to 21:00 means
+# meeting both.
+SUB_WINDOW_SPAN_HOURS = 1
+
+# Only surface the note when it would change the picture: a smaller saving than
+# this is inside the noise of a forecast, and a note printed under every window
+# every day is a note that stops being read.
+#
+# Measured in degrees, never in heat levels. An earlier draft also fired
+# whenever the slot dropped a level, which on the 12-08 forecast reported the
+# early window for a 2°F difference — 65°F dew point against 63°F, straddling
+# the HARD boundary. That is the same bracket-crossing artifact this whole
+# feature exists to see through; a label that flips on 2°F is noise wearing a
+# category's clothes. Either reading may qualify a slot: feels-like and dew
+# point answer different questions and a window can be flat in one, steep in
+# the other.
+SUB_WINDOW_SPREAD_F = 5.0
+
+
+@dataclass(frozen=True)
+class SubWindow:
+    """A contiguous slice of a Window, summarised by its own worst hour."""
+
+    day: date
+    start_hour: int
+    end_hour: int
+    feels_like_f: float | None
+    dew_point_f: float | None
+    precip_prob: float | None
+    wind_mph: float | None
+
+    @property
+    def heat(self) -> HeatLevel:
+        return heat_level(self.feels_like_f, self.dew_point_f)
+
+    @property
+    def label(self) -> str:
+        return f"{self.start_hour:02d}:00–{self.end_hour:02d}:00"
+
+
+def _slot(hours: list[HourlyWeather], day: date, start: int, end: int) -> SubWindow | None:
+    in_slot = [h for h in hours if h.when.date() == day and start <= h.when.hour <= end]
+    if not in_slot:
+        return None
+    return SubWindow(
+        day=day,
+        start_hour=start,
+        end_hour=end,
+        feels_like_f=_worst([h.feels_like_f for h in in_slot]),
+        dew_point_f=_worst([h.dew_point_f for h in in_slot]),
+        precip_prob=_worst([h.precip_prob for h in in_slot]),
+        wind_mph=_worst([h.wind_mph for h in in_slot]),
+    )
+
+
+def coolest_slot(
+    hours: list[HourlyWeather],
+    window: Window,
+    span_hours: int = SUB_WINDOW_SPAN_HOURS,
+) -> SubWindow | None:
+    """The coolest `span_hours` slot inside `window`, ties toward the earlier.
+
+    Ranked on the numbers — feels-like, then dew point — and deliberately
+    *not* on heat level the way `best_window` is. That ordering is right when
+    comparing whole windows, which are usually far enough apart for the level
+    to be the honest summary. Inside a single window the readings sit within a
+    few degrees of each other, so ranking by level would be decided mostly by
+    which side of a threshold a stray degree fell on.
+    """
+    slots = [
+        s
+        for start in range(window.start_hour, window.end_hour - span_hours + 1)
+        if (s := _slot(hours, window.day, start, start + span_hours)) is not None
+    ]
+    if not slots:
+        return None
+    return min(
+        slots,
+        key=lambda s: (
+            s.feels_like_f if s.feels_like_f is not None else 999.0,
+            s.dew_point_f if s.dew_point_f is not None else 999.0,
+            s.start_hour,
+        ),
+    )
+
+
+def sub_window_finding(
+    hours: list[HourlyWeather],
+    window: Window,
+    span_hours: int = SUB_WINDOW_SPAN_HOURS,
+    spread_f: float = SUB_WINDOW_SPREAD_F,
+) -> SubWindow | None:
+    """The coolest slot inside `window`, but **only when it matters**.
+
+    None when the window is flat enough that any start time inside it gives
+    the same run — which is most windows, most days. Returning None is the
+    common case by design.
+    """
+    best = coolest_slot(hours, window, span_hours=span_hours)
+    if best is None:
+        return None
+    if best.start_hour == window.start_hour and best.end_hour == window.end_hour:
+        return None  # the slot is the whole window; nothing to choose between
+
+    def saving(slot_v: float | None, window_v: float | None) -> float:
+        if slot_v is None or window_v is None:
+            return 0.0
+        return window_v - slot_v
+
+    gain = max(
+        saving(best.feels_like_f, window.feels_like_f),
+        saving(best.dew_point_f, window.dew_point_f),
+    )
+    return best if gain >= spread_f else None
+
+
 # --- fetch & cache -------------------------------------------------------------------
 
 
@@ -610,6 +746,15 @@ def _window_line(w: Window) -> str:
     )
 
 
+def _sub_window_line(s: SubWindow) -> str:
+    return (
+        f"↳ short session: {s.label} is {fmt_temp(s.feels_like_f)} feels-like, "
+        f"dew point {fmt_temp(s.dew_point_f)} — {s.heat.value}. "
+        f"The window figure above is its worst hour; a run that fits inside "
+        f"this slot doesn't meet it."
+    )
+
+
 def digest_lines(as_of: date, envelope: dict[str, Any] | None = None) -> list[str]:
     """Today's and tomorrow's windows, worst-hour basis, with the location and
     cache age stated rather than implied."""
@@ -644,6 +789,9 @@ def digest_lines(as_of: date, envelope: dict[str, Any] | None = None) -> list[st
         for w in windows:
             marker = " ← coolest" if best is not None and w.name == best.name else ""
             lines.append(f"  - {_window_line(w)}{marker}")
+            finding = sub_window_finding(hours, w)
+            if finding is not None:
+                lines.append(f"    - {_sub_window_line(finding)}")
 
     lines.append(
         "- Heat levels are none/noticeable/hard/extreme — a separate vocabulary "

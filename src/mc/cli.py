@@ -107,7 +107,11 @@ def weather(
 
     Normally reads the cache written by `mc sync`. Each window is summarised by
     its *worst* hour, because a window is a commitment to be outside for all of
-    it. Heat levels are none/noticeable/hard/extreme — input you cite when
+    it — right for a long run, misleading for a short one that is *placed*
+    inside a window rather than occupying it. So a `↳` line names the coolest
+    hour within any window whose own hours differ enough to change the answer.
+
+    Heat levels are none/noticeable/hard/extreme — input you cite when
     exercising §6 C2, never a trigger that fires by itself.
     """
     as_of = _parse_ddmm(date_) if date_ else date.today()
@@ -160,6 +164,7 @@ def weather(
         table = Table(title=day.strftime("%d-%m"))
         for col in ("Window", "Feels like", "Dew point", "Precip", "Wind", "Heat"):
             table.add_column(col)
+        findings: list[tuple[weather_mod.Window, weather_mod.SubWindow]] = []
         for w in windows:
             coolest = best is not None and w.name == best.name
             table.add_row(
@@ -170,11 +175,23 @@ def weather(
                 f"{w.wind_mph:.0f} mph" if w.wind_mph is not None else "—",
                 w.heat.value,
             )
+            finding = weather_mod.sub_window_finding(hours, w)
+            if finding is not None:
+                findings.append((w, finding))
         console.print(table)
+        for w, s in findings:
+            console.print(
+                f"[cyan]↳ {w.name}: a short session fits in {s.label} — "
+                f"{weather_mod.fmt_temp(s.feels_like_f)} feels-like, dew point "
+                f"{weather_mod.fmt_temp(s.dew_point_f)} ({s.heat.value}), against "
+                f"{weather_mod.fmt_temp(w.feels_like_f)} for the window.[/cyan]"
+            )
 
     console.print(
-        "[dim]Worst hour in each window. Heat level is a reporting label, not a §4 "
-        "verdict and not a §6 trigger — cite the numbers when applying C2.[/dim]"
+        "[dim]Worst hour in each window — right for a long run, which commits you to "
+        "all of it. For a short run, place it: ↳ lines give the coolest hour inside a "
+        "window whose own hours differ enough to matter. Heat level is a reporting "
+        "label, not a §4 verdict and not a §6 trigger — cite the numbers for C2.[/dim]"
     )
 
 

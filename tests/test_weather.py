@@ -250,6 +250,141 @@ def test_best_window_of_nothing_is_none():
     assert weather.best_window([]) is None
 
 
+# --- sub-windows ----------------------------------------------------------------------
+#
+# The regression these exist for: the 12-08-2026 evening window read 86°F (its
+# 17:00-19:00 plateau) while the 20:15 slot a 4-mile run would actually use was
+# 80°F, and nothing in the output said so.
+
+
+def _evening_12_08():
+    """The real 12-08-2026 evening forecast, to the degree."""
+    return weather.hours_from_payload(
+        hours_for(
+            "2026-08-12",
+            {17: (86.0, 53.0), 18: (86.0, 54.0), 19: (86.0, 55.0), 20: (80.0, 61.0), 21: (78.0, 64.0)},
+        )
+    )
+
+
+def _window_named(hours, day, name):
+    return next(w for w in weather.windows_for_day(hours, day) if w.name == name)
+
+
+def test_the_post_sunset_slot_is_found_inside_a_hot_evening_window():
+    hours = _evening_12_08()
+    evening = _window_named(hours, date(2026, 8, 12), "evening")
+    assert evening.feels_like_f == 86.0  # the window is still worst-hour
+
+    slot = weather.sub_window_finding(hours, evening)
+    assert slot is not None
+    assert (slot.start_hour, slot.end_hour) == (20, 21)
+    assert slot.feels_like_f == 80.0
+
+
+def test_a_flat_window_reports_no_slot():
+    """Most windows, most days. Returning None is the common case by design."""
+    hours = weather.hours_from_payload(
+        hours_for("2026-08-12", {17: (84.0, 60.0), 18: (85.0, 61.0), 19: (86.0, 60.0), 20: (85.0, 61.0), 21: (84.0, 60.0)})
+    )
+    evening = _window_named(hours, date(2026, 8, 12), "evening")
+    assert weather.sub_window_finding(hours, evening) is None
+
+
+def test_a_label_flip_on_a_stray_degree_is_not_a_finding():
+    """The 12-08 early window: 74°F/65°F dew against 72°F/63°F an hour later.
+    Two degrees straddling the HARD dew-point boundary flips the heat level,
+    and that is exactly the bracket artifact this feature exists to see
+    through — not a reason to tell anyone to move their run."""
+    hours = weather.hours_from_payload(
+        hours_for("2026-08-12", {5: (74.0, 65.0), 6: (72.0, 63.0), 7: (72.0, 63.0), 8: (74.0, 63.0)})
+    )
+    early = _window_named(hours, date(2026, 8, 12), "early")
+    assert early.heat is weather.HeatLevel.HARD
+    coolest = weather.coolest_slot(hours, early)
+    assert coolest.heat is weather.HeatLevel.NOTICEABLE  # the level does improve
+    assert weather.sub_window_finding(hours, early) is None  # and it doesn't matter
+
+
+def test_a_dew_point_swing_alone_qualifies():
+    """Feels-like flat, dew point steep — a real difference the feels-like
+    test alone would miss."""
+    hours = weather.hours_from_payload(
+        hours_for("2026-08-12", {17: (82.0, 72.0), 18: (82.0, 71.0), 19: (82.0, 68.0), 20: (82.0, 64.0), 21: (81.0, 63.0)})
+    )
+    evening = _window_named(hours, date(2026, 8, 12), "evening")
+    slot = weather.sub_window_finding(hours, evening)
+    assert slot is not None
+    assert slot.dew_point_f == 64.0
+
+
+def test_a_slot_is_bounded_by_both_its_endpoints():
+    """20:00-21:00 means being outside at 21:00 too, so the worst of the pair
+    bounds it — the same inclusive convention windows_for_day uses."""
+    hours = weather.hours_from_payload(
+        hours_for("2026-08-12", {17: (95.0, 70.0), 18: (95.0, 70.0), 19: (95.0, 70.0), 20: (70.0, 55.0), 21: (90.0, 68.0)})
+    )
+    evening = _window_named(hours, date(2026, 8, 12), "evening")
+    slot = weather.coolest_slot(hours, evening)
+    assert slot.feels_like_f == 90.0  # not the 70.0 at 20:00 alone
+
+
+def test_ranking_ignores_heat_level_and_uses_the_numbers():
+    """coolest_slot deliberately diverges from best_window here."""
+    hours = weather.hours_from_payload(
+        hours_for("2026-08-12", {17: (76.0, 66.0), 18: (76.0, 66.0), 19: (90.0, 64.0), 20: (90.0, 64.0), 21: (90.0, 64.0)})
+    )
+    evening = _window_named(hours, date(2026, 8, 12), "evening")
+    slot = weather.coolest_slot(hours, evening)
+    # 19:00+ is a whole heat level cooler by dew point, and 14°F hotter.
+    assert (slot.start_hour, slot.feels_like_f) == (17, 76.0)
+
+
+def test_a_window_with_one_slot_reports_nothing():
+    """Nothing to choose between when the only slot *is* the whole window —
+    repeating it back as a finding would be noise dressed as advice."""
+    hours = weather.hours_from_payload(hours_for("2026-08-12", {8: (70.0, 50.0), 9: (90.0, 70.0)}))
+    one_hour_wide = weather.Window(
+        name="morning", day=date(2026, 8, 12), start_hour=8, end_hour=9,
+        feels_like_f=90.0, dew_point_f=70.0, precip_prob=0.0, wind_mph=5.0,
+    )
+    assert weather.coolest_slot(hours, one_hour_wide) is not None
+    assert weather.sub_window_finding(hours, one_hour_wide) is None
+
+
+def test_missing_readings_never_manufacture_a_finding():
+    hours = weather.hours_from_payload(
+        payload(
+            [f"2026-08-12T{h:02d}:00" for h in (17, 18, 19, 20, 21)],
+            apparent_temperature=[None] * 5,
+            dew_point_2m=[None] * 5,
+        )
+    )
+    evening = _window_named(hours, date(2026, 8, 12), "evening")
+    assert weather.sub_window_finding(hours, evening) is None
+
+
+def test_the_digest_carries_the_slot_under_its_window():
+    hours = _evening_12_08()
+    envelope = {
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "location": {"lat": 40.82, "lon": -73.95, "source": "test"},
+        "data": {
+            "hourly": {
+                "time": [h.when.isoformat() for h in hours],
+                "apparent_temperature": [h.feels_like_f for h in hours],
+                "dew_point_2m": [h.dew_point_f for h in hours],
+            }
+        },
+    }
+    lines = weather.digest_lines(date(2026, 8, 12), envelope)
+    slot_lines = [ln for ln in lines if "short session" in ln]
+    assert len(slot_lines) == 1
+    assert "20:00–21:00" in slot_lines[0]
+    # and it says why the window figure differs, rather than just contradicting it
+    assert "worst hour" in slot_lines[0]
+
+
 # --- enable / disable ----------------------------------------------------------------
 
 

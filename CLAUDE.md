@@ -217,6 +217,29 @@ the same way it already demands cited HRV/sleep/RHR. Classification takes the
 worse of feels-like and dew point; dew point matters more, since it decides
 whether sweat can evaporate.
 
+**A long run occupies a window; a short run is placed inside one** (added
+11-08-2026). Worst-hour summarising is right for the first and misleading for
+the second, and nothing said so. On 12-08 the evening window read 86°F — its
+17:00-19:00 plateau — while the 20:15 slot a 4-miler would actually use was
+80°F; sunset at ~20:00 is a cliff the window figure hides. A start time was
+called off the 86 and had to be corrected once the hourly numbers were dug out
+of `data/raw/weather/latest.json` by hand.
+
+`mc weather` and the digest now print a `↳` line naming the coolest hour inside
+any window whose own hours differ enough to matter (`weather.sub_window_finding`).
+It fires on **degrees, never on heat levels** — a first draft also fired
+whenever the slot dropped a level, and reported the early window for a 2°F
+difference straddling the 65°F dew-point boundary. A label that flips on 2°F is
+the same bracket artifact the feature exists to see through. Either feels-like
+or dew point may qualify a slot, at ≥5°F; ranking within a window is on the
+numbers for the same reason. Most windows report nothing, which is the point.
+
+**Do not trade sleep for a few degrees.** The heat number is one input and not
+the dominant one: sleep <6h is itself a C2 readiness signal, so an alarm set to
+dodge 6°F on an easy run spends more than it buys. C6 already says to weigh
+observed patterns — the evening cluster in the digest's time-of-day table is a
+real preference, not a default to be corrected.
+
 The digest also carries a **Running form** section: cadence, elevation gain,
 grade-adjusted pace against raw pace, and the dew point each run actually
 happened in. All of it comes from calls `mc sync` already made — **zero extra
