@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from mc import layout
@@ -150,3 +152,104 @@ def test_week_start_for_returns_monday():
 
     assert layout.week_start_for(date(2026, 8, 2)) == "27-07"  # a Sunday
     assert layout.week_start_for(date(2026, 7, 27)) == "27-07"  # the Monday itself
+
+
+# --- 0.5mi quantum on prescriptions (added 14-08-2026) ------------------------
+# w/c 10-08 carried days of 5.11 and 3.87mi after eight revisions — hundredths
+# that were the arithmetic of forcing a weekly total into its band, not a
+# distance anyone could run. See layout.QUANTUM_MI.
+
+
+def test_quantize_snaps_to_the_nearest_half_mile():
+    assert layout.quantize(5.11) == 5.0
+    assert layout.quantize(3.87) == 4.0
+    assert layout.quantize(4.24) == 4.0
+    assert layout.quantize(4.26) == 4.5
+    assert layout.quantize(0) == 0.0
+
+
+def test_prescriptions_are_quantized_on_write():
+    layout.set_layout(WEEK, days("27-07:0:rest", "28-07:5.11", "29-07:3.87", "02-08:11:long"), "02-08")
+    wl = layout.get_layout(WEEK)
+    assert wl.day_for("28-07").miles == 5.0
+    assert wl.day_for("29-07").miles == 4.0
+
+
+def test_the_long_run_is_exempt_from_quantization():
+    """Its distance is frozen in plan.lock.json under A1/A3, and week 14's is
+    the marathon itself — 26.2 must survive intact."""
+    layout.set_layout(WEEK, days("27-07:0:rest", "28-07:4", "02-08:26.2:long"), "02-08")
+    assert layout.get_layout(WEEK).day_for("02-08").miles == 26.2
+
+
+def test_cross_minutes_are_not_quantized():
+    """A cross day's number is minutes, not miles."""
+    layout.set_layout(WEEK, days("27-07:40:cross", "28-07:4", "02-08:11:long"), "02-08")
+    wl = layout.get_layout(WEEK)
+    assert wl.day_for("27-07").cross_minutes == 40.0
+    assert wl.total_cross_minutes == 40.0
+
+
+def test_revise_also_quantizes():
+    layout.set_layout(WEEK, days(*FULL_WEEK), "02-08")
+    layout.revise(WEEK, days("27-07:0:rest", "28-07:4.13", "02-08:11:long"), "02-08")
+    assert layout.get_layout(WEEK).day_for("28-07").miles == 4.0
+
+
+def test_no_layout_on_disk_can_carry_hundredths():
+    """Asserts against the raw JSON, not get_layout — reads are normalized too,
+    so going through the accessor would pass this trivially."""
+    layout.set_layout(WEEK, days("27-07:0:rest", "28-07:5.11", "29-07:3.87", "02-08:9:long"), "02-08")
+    stored = json.loads(layout.STATE_PATH.read_text())[WEEK]["days"]
+    assert [d["miles"] for d in stored] == [0.0, 5.0, 4.0, 9.0]
+
+
+def test_hundredths_written_by_an_older_client_are_normalized_on_read():
+    """This file is tracked state synced between devices; a phone on an older
+    client can still write hundredths. A read must not propagate them."""
+    layout.STATE_PATH.write_text(
+        json.dumps(
+            {
+                WEEK: {
+                    "long_run_day": "02-08",
+                    "revised": 8,
+                    "days": [
+                        {"day": "28-07", "miles": 5.11, "session": "easy", "cross_minutes": 0.0},
+                        {"day": "02-08", "miles": 9.0, "session": "long", "cross_minutes": 0.0},
+                    ],
+                }
+            }
+        )
+    )
+    wl = layout.get_layout(WEEK)
+    assert wl.day_for("28-07").miles == 5.0
+    assert wl.day_for("02-08").miles == 9.0  # long run still exempt
+    assert wl.revised == 8
+
+
+def test_totals_are_reported_to_one_decimal_place():
+    layout.set_layout(WEEK, days("27-07:0:rest", "28-07:4.4", "29-07:3.4", "02-08:9:long"), "02-08")
+    # 4.5 + 3.5 + 9 — a sum of quantized parts, no float dust
+    assert layout.get_layout(WEEK).total_miles == 17.0
+
+
+def test_a_race_distance_survives_quantization():
+    """A 5K is 3.1mi because that is what a 5K is. Snapping it to 3.0 discards
+    a fact to satisfy a display convention — the Percy Sutton 5K on 08-08 was
+    being silently rewritten before `race` existed."""
+    layout.set_layout(WEEK, days("27-07:0:rest", "28-07:3.1:race", "02-08:9:long"), "02-08")
+    assert layout.get_layout(WEEK).day_for("28-07").miles == 3.1
+
+
+def test_a_race_counts_as_a_running_day():
+    layout.set_layout(WEEK, days("27-07:0:rest", "28-07:3.1:race", "02-08:9:long"), "02-08")
+    wl = layout.get_layout(WEEK)
+    assert wl.run_days == 2
+    assert wl.day_for("28-07").is_running
+
+
+def test_a_pace_run_is_still_quantized():
+    """Only the event distance is fixed — a 5.5mi pace run is a prescription
+    like any other and must snap."""
+    layout.set_layout(WEEK, days("27-07:0:rest", "28-07:5.4:pace", "02-08:9:long"), "02-08")
+    assert layout.get_layout(WEEK).day_for("28-07").miles == 5.5

@@ -2,10 +2,21 @@ Preview and push upcoming days' workouts to Garmin Connect. `mc push` is
 opt-in and never runs as part of `/daily`, `mc sync`, or anything automatic —
 this command exists precisely because pushing is a separate, deliberate step.
 
+**The day comes from `mc today`, never from your own sense of the date.** This
+runs from a container on UTC, so after 20:00 Eastern both `date` and the date
+you were handed at the top of the session are already tomorrow. Every `DD-MM`
+you write — headers, lease purposes, log rows — comes from that one command.
+It names the timezone it used; if that is not where I actually am, say so
+(the fix is `MC_TZ`).
+
 I will say how many days ahead (default: just today, if unstated), and
 may specify which of the day's suggested options to push (e.g. "push the
 bike one") — pass that via `--option <name>` (matches against today.md's
-substitution table, e.g. "elliptical", "bike"). Without `--option`, it pushes
+substitution table, e.g. "elliptical", "bike"). Since 17-08-2026 that table is
+only in `out/today.md` on days it was asked for, so `--option` will report no
+matching row on a day I never asked for substitutions — that refusal is
+accurate, not a bug. The fix is to decide the swap in `/daily` (which writes
+the table) rather than to invent an option here. Without `--option`, it pushes
 whatever's on the "## Today —" line. Elliptical/bike push as their own
 Garmin workout type (cardio_training / cycling), not disguised as a run.
 
@@ -14,7 +25,7 @@ and the one whose loss is worst, because a missing key makes the next push
 create a **duplicate** Garmin workout instead of updating in place. So take
 the writer lease first: `mc state --claim "push DD-MM"`, and
 `mc state --save "push DD-MM"` after (or `mc state --release` if you end up
-pushing nothing). Refusals mean the same three things as in `/daily` step 0.
+pushing nothing). Refusals mean the same three things as in `/daily` step 1.
 
 For each day in range:
 

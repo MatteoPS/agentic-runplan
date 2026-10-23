@@ -32,10 +32,19 @@ finer coordinates buy literally nothing while describing a doorstep instead of
 a neighbourhood. 2dp is ~1.1 km, comfortably inside one grid cell.
 
 Location comes from `MC_WEATHER_LAT`/`MC_WEATHER_LON` when set, otherwise from
-the most recent GPS-bearing activity in the Garmin cache — which means it
-follows the athlete to Italy in weeks 8-9 without being told. Whichever was
-used is printed every time, never assumed. With neither, weather is simply
-off: no location, no call, no error.
+the most recent GPS-bearing activity — which means it follows the athlete to
+Italy in weeks 8-9 without being told. Whichever was used is printed every
+time, never assumed. With neither, weather is simply off: no location, no
+call, no error.
+
+Two paths supply that activity fix. Garmin puts `startLatitude`/`startLongitude`
+on the activity itself. **intervals puts coordinates nowhere on the activity** —
+all 183 fields were checked; they exist only in its `latlng` stream — so
+`mc sync` resolves the newest outdoor run's first fix once and caches it in
+`data/raw/intervals/location.json`, which `_intervals_location` reads *after*
+the activity scan (a per-activity Garmin fix is more current than one cached
+point). Without that fallback an intervals-only session has no location at
+all and weather goes dark, which is the one situation this has to survive.
 """
 
 from __future__ import annotations
@@ -52,6 +61,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
+from mc import clock
 from mc import config as cfg
 
 BASE_URL = "https://api.open-meteo.com/v1/forecast"
@@ -220,7 +230,7 @@ def _env_location() -> Location | None:
 
 
 def location_from_activities(
-    garmin_activities: list[dict[str, Any]],
+    activities: list[dict[str, Any]],
     as_of: date | None = None,
     max_age_days: int = LOCATION_MAX_AGE_DAYS,
 ) -> Location | None:
@@ -231,10 +241,10 @@ def location_from_activities(
     # broken on this side.
     from mc import sync
 
-    as_of = as_of or date.today()
+    as_of = as_of or clock.today()
     cutoff = as_of - timedelta(days=max_age_days)
     best: tuple[datetime, float, float] | None = None
-    for a in garmin_activities:
+    for a in activities:
         lat, lon = a.get("startLatitude"), a.get("startLongitude")
         if lat is None or lon is None:
             continue
@@ -254,7 +264,7 @@ def location_from_activities(
 
 
 def resolve_location(
-    garmin_activities: list[dict[str, Any]] | None = None, as_of: date | None = None
+    activities: list[dict[str, Any]] | None = None, as_of: date | None = None
 ) -> Location | None:
     """Explicit config wins over inference — that ordering is the least
     surprising one, and it's the only way to say "forecast for the city, not
@@ -268,11 +278,53 @@ def resolve_location(
     env = _env_location()
     if env is not None:
         return env
-    if garmin_activities is None:
-        from mc import digest as digest_mod
+    if activities is None:
+        # Imported here, not at module scope: sources imports sync, which needs
+        # WeatherSyncReport from this module at class-definition time.
+        from mc import sources
 
-        garmin_activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
-    return location_from_activities(garmin_activities, as_of=as_of)
+        activities = sources.activities()
+    from_activities = location_from_activities(activities, as_of=as_of)
+    if from_activities is not None:
+        return from_activities
+    return _intervals_location(as_of=as_of)
+
+
+def _intervals_location(as_of: date | None = None) -> Location | None:
+    """Fallback for an intervals-only cache, which carries no coordinates.
+
+    intervals.icu puts no lat/lon on an activity — they exist only in the
+    `latlng` stream — so `mc sync` resolves the most recent outdoor run's
+    start once and caches the two floats here. Without this, an intervals-only
+    session has no location at all and weather silently goes dark, which is
+    precisely the Italy case this is supposed to survive.
+
+    Ordered *after* the activity scan on purpose: when a Garmin cache is
+    present it is per-activity and more current than a single cached point.
+    """
+    path = cfg.RAW_INTERVALS_DIR / "location.json"
+    if not path.exists():
+        return None
+    try:
+        record = json.loads(path.read_text())
+        lat, lon = float(record["lat"]), float(record["lon"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+    when = str(record.get("start_date_local") or "")[:10]
+    try:
+        fix_day = date.fromisoformat(when)
+    except ValueError:
+        return None
+    # Same staleness rule the Garmin path uses: a fortnight-old fix is a poor
+    # guess at "where am I now".
+    if (as_of or clock.today()) - fix_day > timedelta(days=LOCATION_MAX_AGE_DAYS):
+        return None
+    return Location(
+        lat=round(lat, COORD_PRECISION),
+        lon=round(lon, COORD_PRECISION),
+        source=f"last GPS activity {fix_day.strftime('%d-%m')} (intervals.icu)",
+    )
 
 
 # --- hourly records ---------------------------------------------------------------
@@ -609,7 +661,7 @@ def fetch(
         "data": data,
     }
     out_dir = cfg.RAW_WEATHER_DIR
-    _write_json(out_dir / f"{date.today().isoformat()}.json", envelope)
+    _write_json(out_dir / f"{clock.today().isoformat()}.json", envelope)
     _write_json(out_dir / "latest.json", envelope)
     return envelope
 
@@ -693,13 +745,13 @@ def enabled() -> bool:
     )
 
 
-def sync_weather(garmin_activities: list[dict[str, Any]]) -> WeatherSyncReport:
+def sync_weather(activities: list[dict[str, Any]]) -> WeatherSyncReport:
     """Called once per `mc sync`. Never raises — a weather failure is reported,
     not propagated, for the reason spelled out on WeatherSyncReport."""
     if not enabled():
         return WeatherSyncReport(attempted=False, error="disabled (MC_WEATHER=off)")
 
-    location = resolve_location(garmin_activities)
+    location = resolve_location(activities)
     if location is None:
         return WeatherSyncReport(
             attempted=False,

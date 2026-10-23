@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
+from mc import clock
 from mc import config as cfg
 from mc import traininglog as tlog_mod
 
@@ -177,7 +178,7 @@ def build_report(
     sessions_dir: Path | None = None,
     overrides_path: Path | None = None,
 ) -> DriftReport:
-    as_of = as_of or date.today()
+    as_of = as_of or clock.today()
     log_path = log_path or cfg.TRAINING_LOG_PATH
     sessions_dir = sessions_dir or cfg.LOG_SESSIONS_DIR
     overrides_path = overrides_path or cfg.OVERRIDES_LOG_PATH
@@ -249,7 +250,7 @@ def append_override(code: str, reason: str, *, day: date | None = None, path: Pa
         raise OverrideError("An override needs a reason — 'I feel tired' is not one, and neither is blank.")
 
     path = path or cfg.OVERRIDES_LOG_PATH
-    day = day or date.today()
+    day = day or clock.today()
     path.parent.mkdir(parents=True, exist_ok=True)
     entry = f"\n## {day.strftime('%d-%m')} · {code}\n\n{reason.strip()}\n"
     with path.open("a") as f:

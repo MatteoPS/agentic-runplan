@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from mc import clock
 from mc import config as cfg
 from mc.equivalence import EASY_PACE_MIN_PER_MI, ELLIPTICAL_TRANSFER
 from mc.plan import PlanBlock, PlanLock, PlanWeek
@@ -14,7 +15,25 @@ from mc.plan import PlanBlock, PlanLock, PlanWeek
 # Fixed dates from the frozen plan (§1, §5 Step 4) — not derived from
 # plan.lock.json since the lock file only carries weekly aggregates, not
 # specific travel dates.
-ITALY_ARRIVAL = date(2026, 9, 10)
+#
+# These anchor B7's easy-only windows, so each is the day the athlete is
+# ON THE GROUND, not the day the plane leaves. The distinction only bites
+# eastbound: the NYC->MXP leg departs 10-09 and lands 11-09, so B7's window
+# is 11-09/12-09/13-09. It was 10-09 here until 07-09-2026, which put the
+# window a day early and left Sun 13-09 — the third day off a transatlantic
+# flight — unprotected. §6's own text named the departure date as an arrival
+# too; both were corrected on explicit approval 07-09-2026, so this constant,
+# `instructionforclaudecode.md` §6 B7 and `CLAUDE.md`'s verbatim copy all now
+# read 11-09. `context/italy-trip.md` carries the real itinerary.
+#
+# No practical effect on the plan as routed (week 7's long run is Wed 09-09
+# and the travel block carries no quality sessions), but a long run proposed
+# for 13-09 used to pass and now correctly does not.
+#
+# The westbound return lands the same calendar day it departs, so US_RETURN is
+# both, and is unchanged. B6 is unaffected either way — it reads the flight
+# dates the caller passes in, not these.
+ITALY_ARRIVAL = date(2026, 9, 11)
 US_RETURN = date(2026, 9, 30)
 
 # A3 protects "the 20-miler" and "the 18" absolutely — derived from the
@@ -118,6 +137,40 @@ def _total_aerobic_mi(proposed: ProposedWeek) -> float:
 
 _LONG_RUN_TOLERANCE_MI = 0.2
 
+# The week-sum rules (A2, A4, A5, A6, A9) are judged to the nearest half
+# mile. Below that a "violation" is arithmetic, not a finding.
+#
+# A distance is not a precise quantity. An outdoor route is eyeballed to
+# avoid a long walk home and often comes out a bit over or under; a
+# prescription is now written to the nearest 0.5 mi (layout.QUANTUM_MI) for
+# the same reason. Judging the sum of five such numbers against a floor with
+# only a float epsilon meant a week 0.05 mi short was a violation -- and
+# warnings you dismiss daily are warnings you stop reading, which is the
+# failure this whole file exists to avoid.
+#
+# This is not a relaxation so much as a consistency fix: the codebase had
+# already decided the question twice in the other direction, at
+# _LONG_RUN_TOLERANCE_MI (0.2 mi on A1/A3, the *strictest* rules here) and at
+# drift.DEVIATION_TOLERANCE_MI (a full mile per day, "rounding and GPS
+# noise"). A2/A6/A9 were simply the ones nobody had got to.
+#
+# It cannot hide a missed session: the shortest run anywhere in the plan is
+# 3 mi, six times this. A skipped Tuesday still drags the week under the
+# floor and A2 still fires -- see planning.project_week.
+#
+# Applies in the taper too, where compliance_floor is 1.0 and the floor
+# therefore *is* the plan (wk12: 28.00 mi exactly). A 28 mi taper week now
+# passes at 27.5. That is deliberate: A4 is the rule protecting the taper's
+# shape, and it is a ceiling, not a floor. Both confirmed with me
+# 14-08-2026.
+#
+# Deliberately NOT applied to A1/A3. Those judge a single event against a
+# locked distance rather than a sum of five, and already carry their own
+# tighter tolerance above. By the "half a mile in one run cannot matter"
+# principle they would arguably go to 0.5 as well, but A3 is the rule
+# protecting the 18 and the 20 and that was not the change asked for.
+_WEEK_TOLERANCE_MI = 0.5
+
 
 def check_week(proposed: ProposedWeek, plan: PlanLock) -> RuleResult:
     week = plan.week_by_number(proposed.week)
@@ -137,11 +190,11 @@ def check_week(proposed: ProposedWeek, plan: PlanLock) -> RuleResult:
 
     # A2 — weekly total >= block's compliance floor.
     floor_miles = block.compliance_floor * week.run_miles
-    if proposed.run_miles < floor_miles - 1e-9:
+    if proposed.run_miles < floor_miles - _WEEK_TOLERANCE_MI:
         violations.append(
             _v(
                 "A2",
-                f"Week {week.week}: {proposed.run_miles}mi is below the "
+                f"Week {week.week}: {proposed.run_miles:.1f}mi is below the "
                 f"{block.compliance_floor:.0%} compliance floor ({floor_miles:.1f}mi) "
                 f"for block '{week.block}'.",
             )
@@ -161,18 +214,18 @@ def check_week(proposed: ProposedWeek, plan: PlanLock) -> RuleResult:
 
     # A4 — taper is frozen: exact match required, no additions.
     if block.frozen:
-        if proposed.run_miles > week.run_miles + 1e-9:
+        if proposed.run_miles > week.run_miles + _WEEK_TOLERANCE_MI:
             violations.append(
                 _v(
                     "A4",
                     f"Week {week.week} is in the frozen taper block — no additions, "
-                    f"no making up missed volume. Planned {week.run_miles}mi, "
-                    f"proposed {proposed.run_miles}mi.",
+                    f"no making up missed volume. Planned {week.run_miles:g}mi, "
+                    f"proposed {proposed.run_miles:.1f}mi.",
                 )
             )
 
     # A5 — stepback weeks never topped up.
-    if week.is_stepback and proposed.run_miles > week.run_miles + 1e-9:
+    if week.is_stepback and proposed.run_miles > week.run_miles + _WEEK_TOLERANCE_MI:
         violations.append(
             _v(
                 "A5",
@@ -183,11 +236,11 @@ def check_week(proposed: ProposedWeek, plan: PlanLock) -> RuleResult:
 
     # A6 — no increases beyond 105% of plan.
     ceiling = 1.05 * week.run_miles
-    if proposed.run_miles > ceiling + 1e-9:
+    if proposed.run_miles > ceiling + _WEEK_TOLERANCE_MI:
         violations.append(
             _v(
                 "A6",
-                f"Week {week.week}: {proposed.run_miles}mi exceeds 105% of plan "
+                f"Week {week.week}: {proposed.run_miles:.1f}mi exceeds 105% of plan "
                 f"({ceiling:.1f}mi). Feeling great isn't a reason to increase — "
                 f"stick to the plan.",
             )
@@ -208,10 +261,16 @@ def check_week(proposed: ProposedWeek, plan: PlanLock) -> RuleResult:
                 )
 
     # A9 — long run <= long_run_ratio_max of total aerobic load.
+    # Judged in MILES, not in ratio space: the tolerance is a statement about
+    # how precisely a distance can be run, so it has to be applied to a
+    # distance. `allowance_mi` is the longest run this week's total permits;
+    # the finding is still reported as a percentage because that is how the
+    # cap is written.
     total = _total_aerobic_mi(proposed)
     if total > 0:
-        ratio = proposed.long_run_mi / total
-        if ratio > week.long_run_ratio_max + 1e-9:
+        allowance_mi = week.long_run_ratio_max * total
+        if proposed.long_run_mi > allowance_mi + _WEEK_TOLERANCE_MI:
+            ratio = proposed.long_run_mi / total
             violations.append(
                 _v(
                     "A9",
@@ -234,6 +293,96 @@ def check_week(proposed: ProposedWeek, plan: PlanLock) -> RuleResult:
             )
 
     return RuleResult.from_violations(violations)
+
+
+class WeekBand(BaseModel):
+    """The legal range for a week's running miles: A2's floor to A6's ceiling.
+
+    Exists to be *printed*. The hundredths this project used to prescribe were
+    the symptom of laying a week out flush against one edge of this band --
+    w/c 10-08 was built to hit its 20.9 mi floor almost exactly, so every
+    subsequent nudge had to be shaved off a hundredth at a time, eight
+    revisions deep. A week laid out mid-band absorbs an eyeballed route
+    without anyone having to do arithmetic.
+
+    Reports the strict band, not the tolerance-widened one: _WEEK_TOLERANCE_MI
+    is there to stop noise, not to be spent deliberately.
+    """
+
+    week: int
+    floor_mi: float
+    ceiling_mi: float
+    plan_mi: float
+    ceiling_rule: str  # which rule actually binds the top: A4, A5 or A6
+
+    @property
+    def width_mi(self) -> float:
+        return round(self.ceiling_mi - self.floor_mi, 1)
+
+    @property
+    def midpoint_mi(self) -> float:
+        return round((self.floor_mi + self.ceiling_mi) / 2, 1)
+
+    def headroom(self, proposed_mi: float) -> tuple[float, float]:
+        """(room below the proposal, room above it) before a rule fires."""
+        return (
+            round(proposed_mi - self.floor_mi, 1),
+            round(self.ceiling_mi - proposed_mi, 1),
+        )
+
+    @property
+    def is_degenerate(self) -> bool:
+        """Floor and ceiling are closer together than the tolerance itself.
+
+        True for the whole taper: compliance_floor is 1.0 there, so A2's floor
+        IS the plan value, and A4 caps at that same value. The strict band is
+        a single point — wk12 is 28.0-28.0 — which no outdoor week can hit.
+        """
+        return self.width_mi < _WEEK_TOLERANCE_MI
+
+    @property
+    def note(self) -> str:
+        if not self.is_degenerate:
+            return ""
+        return (
+            f"A2's floor and {self.ceiling_rule}'s ceiling coincide at "
+            f"{self.plan_mi:g} mi — the ±{_WEEK_TOLERANCE_MI:g} mi tolerance is the only "
+            f"thing making this week runnable, so treat {self.plan_mi:g} as the target, "
+            f"not a threshold to clear."
+        )
+
+    def describe(self, proposed_mi: float) -> str:
+        below, above = self.headroom(proposed_mi)
+        return (
+            f"{proposed_mi:.1f} mi · band {self.floor_mi:.1f}-{self.ceiling_mi:.1f} mi "
+            f"(A2 floor / {self.ceiling_rule} ceiling) · slack -{below:.1f} / +{above:.1f}"
+        )
+
+
+def week_band(week: PlanWeek, plan: PlanLock) -> WeekBand:
+    """The week's legal range, with the *binding* ceiling.
+
+    A6's 105% is not always the top. A frozen taper week (A4) and a stepback
+    week (A5) are both capped at the plan value itself, which is tighter --
+    and that is not a detail: week 3 is a stepback with a plan of 22 mi, so
+    its real band is 20.9-22.0, not the 20.9-23.1 A6 alone would suggest. Its
+    layout was set to exactly 22.0, flush against a ceiling nothing was
+    printing.
+    """
+    block = plan.block_for(week)
+    ceiling_mi = 1.05 * week.run_miles
+    ceiling_rule = "A6"
+    if block.frozen:
+        ceiling_mi, ceiling_rule = week.run_miles, "A4"
+    elif week.is_stepback:
+        ceiling_mi, ceiling_rule = week.run_miles, "A5"
+    return WeekBand(
+        week=week.week,
+        floor_mi=round(block.compliance_floor * week.run_miles, 1),
+        ceiling_mi=round(ceiling_mi, 1),
+        plan_mi=week.run_miles,
+        ceiling_rule=ceiling_rule,
+    )
 
 
 def check_race_date(candidate: date, plan: PlanLock) -> RuleResult:
@@ -557,7 +706,11 @@ def parse_override(text: str) -> Override | None:
     if not detail:
         return None
     code = next((c for c in REASON_CODES if detail.upper().startswith(c)), "OVERRIDE")
-    return Override(reason_code=code, detail=detail, logged_at=datetime.now())
+    # Naive on purpose: count_overrides_in_window compares these against
+    # naive bounds. What matters is that the wall clock is the athlete's
+    # rather than the container's -- an override typed at 21:00 in New York
+    # belongs to that day, not to the UTC one that has already started.
+    return Override(reason_code=code, detail=detail, logged_at=clock.now().replace(tzinfo=None))
 
 
 def validate_reason_code(code: str, *, readiness_data_cited: str | None = None) -> RuleResult:

@@ -25,6 +25,11 @@ both already conventions in this project rather than new syntax:
 A .md carrying neither signal is **reported and left alone**. Silently
 deleting a file we don't recognise is exactly the wrong instinct for a
 directory a person keeps things in.
+
+`tomorrow.md` has a second way to go stale, ahead of its own date: once
+today.md declares the same day, the projection has been superseded by the
+real thing, and out/ would otherwise hold two files headed with today's
+date -- one of them, confusingly, still called "tomorrow.md".
 """
 
 from __future__ import annotations
@@ -34,8 +39,10 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 
+from mc import clock
 from mc import config as cfg
 from mc import render as render_mod
+from mc import state as state_mod
 
 # dashboard.md is a rolling view of the whole plan, not a document about a
 # day, so it has no date to go stale against -- `mc render --all` rewrites it
@@ -44,7 +51,11 @@ UNDATED_BY_DESIGN = {"dashboard.md"}
 
 # Same tolerance render.is_stale already applies to tomorrow.md: written the
 # evening before, so its header names tomorrow, and it stays valid through
-# the day it describes.
+# the day it describes -- *until* today.md catches up to that same day. Once
+# /daily has run and written today.md for that date, tomorrow.md is the same
+# projection sitting next to the real thing, both headed with today's date.
+# That is a worse confusion than a missing file, so it goes the moment
+# today.md declares the day tomorrow.md was only guessing at.
 LOOKAHEAD_FILES = {"tomorrow.md"}
 
 _FILENAME_DATE_RE = re.compile(r"-(\d{2}-\d{2})$")
@@ -69,6 +80,7 @@ class Removal:
 class TidyResult:
     removed: list[Removal] = field(default_factory=list)
     undated: list[Path] = field(default_factory=list)
+    protected: list[Path] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -115,12 +127,25 @@ def tidy(out_dir: Path | None = None, as_of: date | None = None, dry_run: bool =
 
     Removing a .md takes its .html twin with it -- a rendered page outliving
     its source is the same staleness one step removed.
+
+    A .md git has no copy of is **reported and kept**, whatever its date. The
+    whole justification for deleting from out/ is that the history holds it,
+    and that is now checked rather than assumed -- /daily tidies *before* it
+    saves, so the window where the claim is false is a real one. The .html
+    twins get no such protection on purpose: they are regenerable output, and
+    protecting them would leave every uncommitted render sitting in out/
+    forever, which is the accumulation this module exists to stop.
     """
     out_dir = out_dir if out_dir is not None else cfg.OUT_DIR
-    as_of = as_of or date.today()
+    as_of = as_of or clock.today()
     result = TidyResult()
     if not out_dir.exists():
         return result
+
+    today_declared = None
+    today_path = out_dir / "today.md"
+    if today_path.exists():
+        today_declared = _declared_date(today_path)
 
     doomed: dict[Path, str] = {}
     for md_path in sorted(out_dir.glob("*.md")):
@@ -129,9 +154,27 @@ def tidy(out_dir: Path | None = None, as_of: date | None = None, dry_run: bool =
         if _declared_date(md_path) is None and md_path.name not in LOOKAHEAD_FILES:
             result.undated.append(md_path)
             continue
-        if is_expired(md_path, as_of):
-            doomed[md_path] = "its day has passed"
-            doomed[md_path.with_suffix(".html")] = "the markdown it renders is gone"
+        if (
+            md_path.name in LOOKAHEAD_FILES
+            and today_declared is not None
+            and _declared_date(md_path) == today_declared
+        ):
+            reason = "today.md now covers the day it projected"
+        elif is_expired(md_path, as_of):
+            reason = "its day has passed"
+        else:
+            continue
+
+        # One answer to "may I delete a .md git has no copy of", whichever
+        # reason put it on the list. Superseded and expired are different
+        # arguments for deleting; neither is an argument for deleting the only
+        # copy of something -- and /preview can leave an uncommitted
+        # tomorrow.md behind exactly as easily as /daily can a today.md.
+        if state_mod.has_uncommitted_content(md_path):
+            result.protected.append(md_path)
+            continue
+        doomed[md_path] = reason
+        doomed[md_path.with_suffix(".html")] = "the markdown it renders is gone"
 
     for html_path in sorted(out_dir.glob("*.html")):
         if html_path in doomed:

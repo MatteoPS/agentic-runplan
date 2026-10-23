@@ -2,9 +2,16 @@ Monday review for marathon-2026. Run `mc state --claim "week review w/c DD-MM"`
 first — if the private state repo is behind, pull before doing anything else,
 or this review is written against history that's missing another machine's
 days; if another device holds the writer lease, a ritual is in flight there
-and this one must wait (see `/daily` step 0 for the three refusals).
+and this one must wait (see `/daily` step 1 for the three refusals).
 Then `mc sync` and `mc digest`, so everything below reflects real data, not
 stale cache.
+
+**The day comes from `mc today`, never from your own sense of the date.** This
+runs from a container on UTC, so after 20:00 Eastern both `date` and the date
+you were handed at the top of the session are already tomorrow. Every `DD-MM`
+you write — headers, lease purposes, log rows — comes from that one command.
+It names the timezone it used; if that is not where I actually am, say so
+(the fix is `MC_TZ`).
 
 Produce a review covering:
 
@@ -32,10 +39,13 @@ Produce a review covering:
 4. **Run-days trend.** Actual running days/week over the last 3-4 weeks
    against the shin-adaptation budget (4 most weeks, 5 in peak weeks).
 
-   Also run `mc fuel "<next week's long run>"` and state this week's carb
-   target in one line, so there's time to buy what it needs before the day.
-   `/daily` prints the full plan; here it's a shopping note. The target ramps
-   week to week on purpose — say the number, not "keep fuelling".
+   Also run `mc fuel "<next week's long run>"` and state what it needs in one
+   line, so there's time to buy it before the day. `/daily` prints the full
+   plan; here it's a shopping note, so say the **counts** — N gels, and a
+   packet of drink mix or not — never "keep fuelling". The cadence is fixed
+   (every 20 min), so the number that moves week to week is the gel count, and
+   Italy's two long runs come out of a 6-pack bought locally rather than
+   needing drink mix shipped. Protocol: `context/fueling.md`.
 
 5. **Next week's layout.** Pull next week's targets from `plan.lock.json`
    (`mc week --week N+1`) and lay out a sensible day-of-week structure,
@@ -49,12 +59,23 @@ Produce a review covering:
 
    `mc layout <week_num> --week-start DD-MM --set "DD-MM:mi:type,..."`
 
-   every day of the week, `type` one of `rest easy pace long cross` (omit it
-   and it's inferred: 0 mi → rest, otherwise easy). Exactly one day must be
+   every day of the week, `type` one of `rest easy pace long race cross` (omit
+   it and it's inferred: 0 mi → rest, otherwise easy). Exactly one day must be
    `:long`. It prints the week and says whether the layout passes §6 — if it
    reports violations, fix the layout before moving on, don't note it and
    continue. First write per week wins; a mid-week C1 reshuffle uses
    `--revise` and gets a reason code in `log/sessions/`.
+
+   **Prescribe in half miles.** Easy and pace days are snapped to the nearest
+   0.5 mi on write, so type them that way rather than making the command do
+   it. `:long` and `:race` are exempt — those distances are measurements, not
+   prescriptions.
+
+   **Aim mid-band, not at the floor.** `mc layout` prints the week's legal
+   range and how much slack sits either side of it. A week laid out flush
+   against an edge passes today and has to be shaved tomorrow, which is where
+   the old 5.11 mi prescriptions came from. If it warns that the layout is
+   flush, move it toward the midpoint it names — that is C1 and free.
 
    Then call
    `mc strength <week_num> --week-start DD-MM --set-days "DD-MM:mi,DD-MM:mi,..." --long-run-day DD-MM`

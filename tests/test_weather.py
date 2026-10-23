@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from mc import clock
 from mc import weather
 
 
@@ -14,6 +15,13 @@ def clean_env(monkeypatch):
 @pytest.fixture(autouse=True)
 def isolated_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(weather.cfg, "RAW_WEATHER_DIR", tmp_path / "weather")
+    # RAW_INTERVALS_DIR matters here too, because resolve_location falls back
+    # to data/raw/intervals/location.json. Without this, every "no location
+    # anywhere" test silently depends on the real repo not having that file —
+    # which was true until the first live sync wrote one, at which point two
+    # tests failed on a machine where no code had changed. Construct the
+    # state under test; never inherit it from the checkout.
+    monkeypatch.setattr(weather.cfg, "RAW_INTERVALS_DIR", tmp_path / "intervals")
 
 
 def payload(times, **series):
@@ -161,6 +169,62 @@ def test_a_stale_gps_fix_is_not_used():
 
 def test_no_location_at_all_resolves_to_none():
     assert weather.resolve_location([], as_of=date(2026, 8, 4)) is None
+
+
+# --- the intervals.icu location fallback ------------------------------------
+#
+# An intervals activity carries no coordinates at all — they exist only in its
+# latlng stream — so `mc sync` resolves the newest outdoor run's start fix once
+# and caches it. Without this path an intervals-only session has no location
+# and weather goes silently dark, which is the Italy case exactly.
+
+
+def write_cached_location(day: str = "2026-08-12", lat=40.799866, lon=-73.957855):
+    d = weather.cfg.RAW_INTERVALS_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "location.json").write_text(
+        f'{{"activity_id": "i1", "start_date_local": "{day}T20:08:14",'
+        f' "lat": {lat}, "lon": {lon}}}'
+    )
+
+
+def test_intervals_location_is_used_when_activities_have_no_gps():
+    write_cached_location()
+    loc = weather.resolve_location([], as_of=date(2026, 8, 12))
+    assert (loc.lat, loc.lon) == (40.8, -73.96)  # rounded to COORD_PRECISION
+    assert "intervals.icu" in loc.source
+
+
+def test_a_garmin_fix_wins_over_the_cached_intervals_one():
+    """Ordered after the activity scan on purpose: a per-activity Garmin fix is
+    more current than a single cached point."""
+    write_cached_location()
+    loc = weather.resolve_location(
+        [gps_activity("2026-08-12 07:00:00")], as_of=date(2026, 8, 12)
+    )
+    assert "intervals.icu" not in loc.source
+
+
+def test_a_stale_intervals_fix_is_refused_like_a_stale_garmin_one():
+    """Same LOCATION_MAX_AGE_DAYS rule: a fortnight-old fix is a poor guess at
+    'where am I now', and reporting home weather from Italy is the failure
+    this whole path exists to avoid."""
+    write_cached_location(day="2026-07-01")
+    assert weather.resolve_location([], as_of=date(2026, 8, 12)) is None
+
+
+def test_an_env_override_still_beats_the_cached_fix(monkeypatch):
+    monkeypatch.setenv("MC_WEATHER_LAT", "45.46")
+    monkeypatch.setenv("MC_WEATHER_LON", "9.19")
+    write_cached_location()
+    loc = weather.resolve_location([], as_of=date(2026, 8, 12))
+    assert (loc.lat, loc.lon) == (45.46, 9.19)
+
+
+def test_a_corrupt_location_cache_is_not_a_crash():
+    weather.cfg.RAW_INTERVALS_DIR.mkdir(parents=True, exist_ok=True)
+    (weather.cfg.RAW_INTERVALS_DIR / "location.json").write_text("{not json")
+    assert weather.resolve_location([], as_of=date(2026, 8, 12)) is None
 
 
 def test_partial_env_config_falls_through_to_gps(monkeypatch):
@@ -424,7 +488,7 @@ def test_a_fetch_failure_is_reported_not_raised(monkeypatch):
         raise weather.WeatherConnectionError("network down")
 
     monkeypatch.setattr(weather, "fetch", boom)
-    report = weather.sync_weather([gps_activity(datetime.now().strftime("%Y-%m-%d 07:00:00"))])
+    report = weather.sync_weather([gps_activity(clock.today().strftime("%Y-%m-%d 07:00:00"))])
     assert report.attempted and not report.ok
     assert "network down" in report.error
     assert report.location_source is not None  # still says where it tried

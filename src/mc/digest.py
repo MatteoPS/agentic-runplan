@@ -8,9 +8,11 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from mc import clock
 from mc import config as cfg
 from mc import intervals
 from mc import metrics
+from mc import sources
 from mc import sync
 from mc import weather
 
@@ -44,29 +46,10 @@ def load_sync_report() -> sync.SyncReport | None:
         return None
 
 
-def latest_garmin_wellness_value(
-    metric: str, as_of: date, lookback_days: int = 7
-) -> tuple[str, Any] | None:
-    """Most recent day at or before as_of (within lookback_days) that actually
-    has non-empty data for this metric — as_of itself often has no data yet
-    (watch not synced), so we walk backward rather than assuming it's
-    populated."""
-    metric_dir = cfg.RAW_GARMIN_DIR / "wellness" / metric
-    if not metric_dir.exists():
-        return None
-    for offset in range(lookback_days):
-        d = (as_of - timedelta(days=offset)).isoformat()
-        f = metric_dir / f"{d}.json"
-        if not f.exists():
-            continue
-        try:
-            payload = json.loads(f.read_text())
-        except Exception:  # noqa: BLE001
-            continue
-        data = payload.get("data")
-        if data not in (None, [], {}):
-            return d, data
-    return None
+# Moved to sources.py, which now owns the question of which cache answers for
+# what. Re-exported because the name says exactly what it does and callers
+# reading Garmin specifically still want it.
+latest_garmin_wellness_value = sources.garmin_wellness_value
 
 
 # --- time-of-day extraction (build-order step 3's named deliverable) -----------
@@ -99,11 +82,21 @@ class TimeOfDayBucket:
     latest: str
 
 
-def extract_time_of_day_patterns(garmin_activities: list[dict[str, Any]]) -> list[TimeOfDayBucket]:
+def extract_time_of_day_patterns(activities: list[dict[str, Any]]) -> list[TimeOfDayBucket]:
     """Per §1: 'derive my habitual training times from Garmin activity start
-    times (weekday vs weekend, by session type)'. Uses Garmin only, per the
-    spec's explicit wording — also avoids double-counting matched activities
-    from both sources.
+    times (weekday vs weekend, by session type)'.
+
+    **Widened from Garmin-only to both sources, 12-08-2026.** The spec names
+    Garmin because it was the only source when it was written; what the clause
+    is *for* is C6 — don't propose a 6am session if I never run at 6am — and a
+    session recorded only in intervals is just as much evidence of when I
+    actually run. On a laptop that has been shut for a week, Garmin-only would
+    derive the pattern from stale data or none.
+
+    The original reason for restricting to one source still holds and is still
+    honoured: a session present in both must not be counted twice. That is now
+    handled upstream — `sources.activities()` matches on bucket and start time
+    and emits each session once — rather than by ignoring a whole source here.
 
     Split by AM/PM in addition to weekday/weekend/type: real data (28-07-2026)
     showed my weekday runs are genuinely bimodal — a tight morning
@@ -120,7 +113,7 @@ def extract_time_of_day_patterns(garmin_activities: list[dict[str, Any]]) -> lis
     sample for no benefit.
     """
     groups: dict[tuple[str, bool, str], list[int]] = defaultdict(list)
-    for a in garmin_activities:
+    for a in activities:
         dt = _garmin_local_start(a)
         if dt is None:
             continue
@@ -166,11 +159,11 @@ class ActivityLogRow:
 
 
 def recent_activity_log(
-    garmin_activities: list[dict[str, Any]], as_of: date, days: int = RECENT_LOG_DAYS
+    activities: list[dict[str, Any]], as_of: date, days: int = RECENT_LOG_DAYS
 ) -> list[ActivityLogRow]:
     cutoff = as_of - timedelta(days=days)
     rows = []
-    for a in garmin_activities:
+    for a in activities:
         dt = _garmin_local_start(a)
         if dt is None or dt.date() < cutoff or dt.date() > as_of:
             continue
@@ -200,12 +193,12 @@ class RollingVolume:
 
 
 def rolling_run_volume(
-    garmin_activities: list[dict[str, Any]], window_days: int, as_of: date
+    activities: list[dict[str, Any]], window_days: int, as_of: date
 ) -> RollingVolume:
     cutoff = as_of - timedelta(days=window_days)
     miles = 0.0
     run_days: set[date] = set()
-    for a in garmin_activities:
+    for a in activities:
         dt = _garmin_local_start(a)
         if dt is None or dt.date() < cutoff or dt.date() > as_of:
             continue
@@ -247,7 +240,7 @@ class DayActuals:
 
 
 def actuals_by_day(
-    garmin_activities: list[dict[str, Any]], week_start: date, week_end: date
+    activities: list[dict[str, Any]], week_start: date, week_end: date
 ) -> dict[str, DayActuals]:
     """Per-day breakdown of a Mon-Sun plan week, keyed DD-MM.
 
@@ -260,7 +253,7 @@ def actuals_by_day(
     rather than repeating the loop.
     """
     days: dict[str, DayActuals] = {}
-    for a in garmin_activities:
+    for a in activities:
         dt = _garmin_local_start(a)
         if dt is None or not (week_start <= dt.date() <= week_end):
             continue
@@ -283,14 +276,14 @@ def actuals_by_day(
 
 
 def actuals_for_plan_week(
-    garmin_activities: list[dict[str, Any]], week_start: date, week_end: date, *, as_of: date | None = None
+    activities: list[dict[str, Any]], week_start: date, week_end: date, *, as_of: date | None = None
 ) -> WeekActuals:
     """Shared by cli.py (mc check/status/week) and render.py's dashboard —
     written once here rather than duplicated, since both need the same
     'what actually happened in this specific Mon-Sun plan week' computation,
     distinct from rolling_run_volume's trailing-N-days window."""
-    as_of = as_of or date.today()
-    by_day = actuals_by_day(garmin_activities, week_start, week_end)
+    as_of = as_of or clock.today()
+    by_day = actuals_by_day(activities, week_start, week_end)
     return WeekActuals(
         long_run_mi=round(max((d.longest_run_mi for d in by_day.values()), default=0.0), 1),
         run_miles=round(sum(d.run_miles for d in by_day.values()), 1),
@@ -305,14 +298,21 @@ def actuals_for_plan_week(
 
 @dataclass
 class WellnessSnapshot:
-    training_readiness: tuple[str, Any] | None
-    hrv: tuple[str, Any] | None
-    sleep: tuple[str, Any] | None
-    stats: tuple[str, Any] | None
-    stress: tuple[str, Any] | None
-    training_status: tuple[str, Any] | None
-    max_metrics: tuple[str, Any] | None
+    """Each entry is (day, data, source) — the source is carried rather than
+    assumed because these readings can now come from either cache, and §7's
+    rule is that a number never appears without saying where it came from."""
+
+    training_readiness: tuple[str, Any, str] | None
+    hrv: tuple[str, Any, str] | None
+    sleep: tuple[str, Any, str] | None
+    stats: tuple[str, Any, str] | None
+    stress: tuple[str, Any, str] | None
+    training_status: tuple[str, Any, str] | None
+    max_metrics: tuple[str, Any, str] | None
     intervals_ctl_atl_tsb: dict[str, Any] | None
+    # (snapshot_day, payload) — Garmin-only and not a daily reading; see
+    # sources.garmin_hr_settings for why it has no lookback window.
+    hr_settings: tuple[str, Any] | None = None
 
 
 def build_wellness_snapshot(as_of: date) -> WellnessSnapshot:
@@ -327,14 +327,19 @@ def build_wellness_snapshot(as_of: date) -> WellnessSnapshot:
     latest_intervals_record = max(eligible, key=lambda r: r.get("id", "")) if eligible else None
 
     return WellnessSnapshot(
-        training_readiness=latest_garmin_wellness_value("training_readiness", as_of),
-        hrv=latest_garmin_wellness_value("hrv", as_of),
-        sleep=latest_garmin_wellness_value("sleep", as_of),
-        stats=latest_garmin_wellness_value("stats", as_of),
-        stress=latest_garmin_wellness_value("stress", as_of),
-        training_status=latest_garmin_wellness_value("training_status", as_of),
-        max_metrics=latest_garmin_wellness_value("max_metrics", as_of),
+        # Garmin-only, deliberately: nothing in §6 reads them, and intervals'
+        # own `readiness` is a different quantity that would be misleading
+        # printed under Garmin's label.
+        training_readiness=sources.wellness_value("training_readiness", as_of),
+        training_status=sources.wellness_value("training_status", as_of),
+        max_metrics=sources.wellness_value("max_metrics", as_of),
+        # The three C2 spends, plus stress. These fall back to intervals.
+        hrv=sources.wellness_value("hrv", as_of),
+        sleep=sources.wellness_value("sleep", as_of),
+        stats=sources.wellness_value("stats", as_of),
+        stress=sources.wellness_value("stress", as_of),
         intervals_ctl_atl_tsb=latest_intervals_record,
+        hr_settings=sources.garmin_hr_settings(as_of),
     )
 
 
@@ -420,6 +425,47 @@ def _format_hms(seconds: float) -> str:
     return f"{h}h {m}m"
 
 
+# Pinned against the real response, 20-08-2026 (raw JSON in
+# data/raw/garmin/wellness/hr_settings/). Max HR is **not** where the obvious
+# endpoint name suggests: `get_userprofile_settings()` carries only locale and
+# display preferences, and `get_user_profile()`'s `userData` carries VO2max and
+# lactate-threshold HR but no maximum. The number lives on the HR *zone*
+# configuration, as the max the zones were computed from — which is also the
+# right one to report, since it is the value actually in force.
+#
+# One entry per sport profile, "DEFAULT" being the account-wide one. The
+# fallback is the first entry carrying a usable number rather than a second
+# hard-coded path: an added sport profile should not blank the line.
+HR_ZONE_MAX_FIELD = "maxHeartRateUsed"
+HR_ZONE_DEFAULT_SPORT = "DEFAULT"
+
+
+def extract_max_hr(data: Any) -> int | None:
+    """Max HR out of an hr_settings snapshot, or None if no known field
+    carries a usable number. None is deliberately not 0 or "n/a" — the caller
+    says something different for "never synced" than for "shape changed"."""
+    if not isinstance(data, dict):
+        return None
+    zones = data.get("heart_rate_zones")
+    if not isinstance(zones, list):
+        return None
+
+    def usable(entry: Any) -> int | None:
+        if not isinstance(entry, dict):
+            return None
+        value = entry.get(HR_ZONE_MAX_FIELD)
+        return int(value) if isinstance(value, (int, float)) and value > 0 else None
+
+    for entry in zones:
+        if isinstance(entry, dict) and entry.get("sport") == HR_ZONE_DEFAULT_SPORT:
+            if (value := usable(entry)) is not None:
+                return value
+    for entry in zones:
+        if (value := usable(entry)) is not None:
+            return value
+    return None
+
+
 def _wellness_snapshot_lines(snapshot: WellnessSnapshot) -> list[str]:
     """Field paths below were verified against my real Garmin data
     28-07-2026 (raw JSON in data/raw/garmin/wellness/) — the raw response
@@ -428,15 +474,32 @@ def _wellness_snapshot_lines(snapshot: WellnessSnapshot) -> list[str]:
     real responses rather than guessed."""
     lines = []
 
-    def fmt(label: str, entry: tuple[str, Any] | None, extractor: Any, missing_note: str = "no data in lookback window") -> str:
+    def fmt(label: str, entry: tuple[str, Any, str] | None, extractor: Any, missing_note: str = "no data in lookback window") -> str:
         if entry is None:
             return f"- {label}: {missing_note}"
-        d, data = entry
+        d, data, source = entry
         try:
             value = extractor(data)
         except Exception:  # noqa: BLE001
-            value = "unparsed — check raw cache, response shape may have changed"
-        return f"- {label}: {value} ({d})"
+            # Two causes look identical from here and the message must not
+            # pick one: Garmin writes a populated payload whose inner value is
+            # null on a day it recorded nothing, which is ordinary, and a real
+            # response-shape change, which is not.
+            value = "no usable value that day (payload present), or the response shape changed"
+        # The source is always named, not only when it is the unusual one:
+        # "unlabelled" would otherwise have to mean "Garmin", which is a
+        # convention a reader has no way to know (§7).
+        label_source = "intervals.icu" if source == sources.INTERVALS else "garmin"
+        return f"- {label}: {value} ({d} · {label_source})"
+
+    def hrv_value(d: Any) -> str:
+        """intervals carries the number but no status word — print what exists
+        rather than a trailing ', None'."""
+        summary = d.get("hrvSummary", {})
+        avg, status = summary.get("lastNightAvg"), summary.get("status")
+        if avg is None:
+            return "n/a"
+        return f"{avg} ms, {status}" if status else f"{avg} ms"
 
     lines.append(
         fmt(
@@ -453,13 +516,7 @@ def _wellness_snapshot_lines(snapshot: WellnessSnapshot) -> list[str]:
             ),
         )
     )
-    lines.append(
-        fmt(
-            "HRV (last night avg)",
-            snapshot.hrv,
-            lambda d: f"{d.get('hrvSummary', {}).get('lastNightAvg')} ms, {d.get('hrvSummary', {}).get('status')}",
-        )
-    )
+    lines.append(fmt("HRV (last night avg)", snapshot.hrv, hrv_value))
     lines.append(
         fmt(
             "Sleep",
@@ -496,6 +553,20 @@ def _wellness_snapshot_lines(snapshot: WellnessSnapshot) -> list[str]:
         )
     )
 
+    max_hr = extract_max_hr(snapshot.hr_settings[1]) if snapshot.hr_settings else None
+    if max_hr is not None:
+        # The date is the day the *setting was snapshotted*, not a day it was
+        # measured — a setting is true until changed, so an old date here means
+        # "unchanged since", not "stale". See sources.garmin_hr_settings.
+        lines.append(f"- Max HR: {max_hr} bpm ({snapshot.hr_settings[0]} · garmin)")
+    elif snapshot.hr_settings is not None:
+        lines.append(
+            f"- Max HR: no usable value in the snapshot ({snapshot.hr_settings[0]} · garmin) "
+            "— the response shape may have changed"
+        )
+    else:
+        lines.append("- Max HR: no snapshot yet (run `mc sync`)")
+
     if snapshot.intervals_ctl_atl_tsb:
         r = snapshot.intervals_ctl_atl_tsb
         ctl, atl, tsb = r.get("ctl"), r.get("atl"), r.get("tsb")
@@ -511,15 +582,15 @@ def _wellness_snapshot_lines(snapshot: WellnessSnapshot) -> list[str]:
 
 def render_markdown(as_of: date) -> str:
     report = load_sync_report()
-    garmin_activities = _load_latest(cfg.RAW_GARMIN_DIR, "activities")
+    activities = sources.activities()
 
-    tod_buckets = extract_time_of_day_patterns(garmin_activities)
-    log_rows = recent_activity_log(garmin_activities, as_of)
+    tod_buckets = extract_time_of_day_patterns(activities)
+    log_rows = recent_activity_log(activities, as_of)
     form_rows = metrics.enrich_with_weather(
-        metrics.run_metrics(garmin_activities, as_of), weather.cached_hours()
+        metrics.run_metrics(activities, as_of), weather.cached_hours()
     )
-    cadence = metrics.cadence_baseline(garmin_activities, as_of)
-    gap_baseline = metrics.pace_baseline(garmin_activities, as_of)
+    cadence = metrics.cadence_baseline(activities, as_of)
+    gap_baseline = metrics.pace_baseline(activities, as_of)
     # Only the runs long enough for thirds to mean anything — every one of
     # these reads a detail payload already on disk, so this costs no API calls.
     splits = {
@@ -527,7 +598,7 @@ def render_markdown(as_of: date) -> str:
         for r in form_rows
         if r.activity_id and (r.distance_mi or 0) >= metrics.MIN_DECAY_DISTANCE_MI
     }
-    volumes = [rolling_run_volume(garmin_activities, w, as_of) for w in ROLLING_WINDOWS_DAYS]
+    volumes = [rolling_run_volume(activities, w, as_of) for w in ROLLING_WINDOWS_DAYS]
     wellness = build_wellness_snapshot(as_of)
 
     lines: list[str] = [f"# Digest · {as_of.strftime('%d-%m-%Y')}", ""]
@@ -566,7 +637,7 @@ def render_markdown(as_of: date) -> str:
 
 
 def write_digest(as_of: date | None = None) -> Path:
-    as_of = as_of or date.today()
+    as_of = as_of or clock.today()
     cfg.DIGEST_DIR.mkdir(parents=True, exist_ok=True)
     markdown = render_markdown(as_of)
     dated_path = cfg.DIGEST_DIR / f"{as_of.isoformat()}.md"
@@ -592,7 +663,7 @@ if __name__ == "__main__":
     parser.add_argument("--date", type=str, default=None, help="DD-MM, defaults to today")
     args = parser.parse_args()
 
-    as_of = _parse_ddmm(args.date) if args.date else date.today()
+    as_of = _parse_ddmm(args.date) if args.date else clock.today()
     path = write_digest(as_of)
     print(f"Digest written to {path}", file=sys.stderr)
     print(path.read_text())

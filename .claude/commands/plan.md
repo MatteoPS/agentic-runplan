@@ -1,5 +1,12 @@
 Show the next N days — today from real data, the rest projected. Default 3.
 
+**The day comes from `mc today`, never from your own sense of the date.** This
+runs from a container on UTC, so after 20:00 Eastern both `date` and the date
+you were handed at the top of the session are already tomorrow. Every `DD-MM`
+you write — headers, lease purposes, log rows — comes from that one command.
+It names the timezone it used; if that is not where I actually am, say so
+(the fix is `MC_TZ`).
+
 I may say `/plan`, `/plan 3`, `/plan 5`. Without a number, use 3.
 
 `/daily` already runs this for days 2-3 and appends the result to

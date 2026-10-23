@@ -1,8 +1,82 @@
-from datetime import date, datetime
+"""Shared fixtures — and the sandbox that keeps the suite out of the real
+state repo.
 
-import pytest
+`uv run pytest` used to write into `data/` and `log/` for real: `mc digest`,
+invoked unmocked by test_cli.py, rewrote `data/digest/latest.md` and backfilled
+`log/training-log.md`, once flipping a `*(pending)*` row to `Nothing logged`
+before the activity for that day had synced. The training log is a whole-file
+rewrite with no merge logic, so that is the exact class of silent loss
+`mc state` exists to prevent — caused by running the tests.
 
-from mc.plan import PlanBlock, PlanLock, PlanWeek
+It had been noticed once and fixed one path at a time (test_render_all_does_
+not_crash still monkeypatches `cfg.OUT_DIR`, with a comment about a test that
+"destroys data every time the suite runs"). Redirecting paths individually
+fails open: the next writable path anyone adds leaks, and nothing says so. So
+the isolation is structural instead, on the same argument the public/private
+repo split was made on — point `MC_STATE_DIR` at a throwaway directory before
+anything imports `mc.config`, and there is no path left to leak through.
+
+Why this block sits above the imports, and why it is not a fixture: `config.py`
+resolves `STATE_ROOT` and every path under it **at import time**, and
+`layout.STATE_PATH` / `strength.STATE_PATH` are derived from `cfg.DATA_DIR` the
+same way. Setting the environment first is what puts those derived constants in
+the sandbox too — a fixture monkeypatching `cfg` attributes cannot reach them.
+`load_dotenv(override=False)` means this also beats a laptop `.env` that sets
+`MC_STATE_DIR` itself.
+"""
+
+import atexit
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+_REAL_ROOT = Path(__file__).resolve().parents[1]
+_SANDBOX = Path(tempfile.mkdtemp(prefix="mc-test-state-"))
+
+os.environ["MC_STATE_DIR"] = str(_SANDBOX)
+# No test copies anything into whatever folder the phone syncs.
+os.environ.pop("MC_EXPORT_DIR", None)
+atexit.register(shutil.rmtree, _SANDBOX, ignore_errors=True)
+
+
+def _seed_sandbox() -> None:
+    """Real data to read, throwaway copies to write.
+
+    `data/raw` is symlinked rather than copied: it is tens of megabytes, and
+    `mc sync` — the only thing that writes there — is deliberately not
+    exercised by this suite. Everything the tests actually rewrite is a small
+    file, and gets a copy.
+    """
+    # Deliberately not a git repo: state.save()/claim() no-op against a root
+    # with no .git, so the default path cannot commit or push anything. The
+    # tests that exercise the git machinery build their own repos in tmp_path
+    # and pass explicit roots, so MC_STATE_GIT stays untouched here — setting
+    # it off globally would disable the very behaviour test_state.py asserts.
+    for sub in ("data", "log", "out"):
+        (_SANDBOX / sub).mkdir(parents=True, exist_ok=True)
+
+    raw = _REAL_ROOT / "data" / "raw"
+    if raw.exists():
+        (_SANDBOX / "data" / "raw").symlink_to(raw, target_is_directory=True)
+
+    for name in ("week_layout.json", "strength_schedule.json", "pushed.json"):
+        real = _REAL_ROOT / "data" / name
+        if real.exists():
+            shutil.copy2(real, _SANDBOX / "data" / name)
+
+    training_log = _REAL_ROOT / "log" / "training-log.md"
+    if training_log.exists():
+        shutil.copy2(training_log, _SANDBOX / "log" / "training-log.md")
+
+
+_seed_sandbox()
+
+from datetime import date, datetime  # noqa: E402
+
+import pytest  # noqa: E402
+
+from mc.plan import PlanBlock, PlanLock, PlanWeek  # noqa: E402
 
 
 @pytest.fixture

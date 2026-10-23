@@ -251,6 +251,39 @@ def test_b7_quality_session_on_return_day_rejected(real_plan):
     assert any(v.rule_id == "B7" for v in result.violations)
 
 
+def test_b7_anchors_are_landing_days_not_departure_days():
+    """ITALY_ARRIVAL is the day the plane LANDS, not the day it leaves.
+
+    The NYC->MXP leg departs 10-09 and lands 11-09. Anchoring B7 on the
+    departure put the easy-only window a day early and left Sun 13-09 — the
+    third day off a transatlantic flight — unprotected. Pinned as dates
+    because every other B7 test is written relative to the constant and would
+    follow it silently back to the wrong day.
+    """
+    assert ITALY_ARRIVAL == date(2026, 9, 11)
+    assert US_RETURN == date(2026, 9, 30)
+
+
+def test_b7_third_day_after_landing_is_protected(real_plan):
+    """Sun 13-09 is inside the window. This is the day the old anchor missed."""
+    d = date(2026, 9, 13)
+    week = real_plan.week_for_date(d)
+    proposed = ProposedSchedule(week=week.week, long_run_date=d)
+    result = check_schedule(proposed, real_plan)
+    assert any(v.rule_id == "B7" for v in result.violations)
+
+
+def test_b7_departure_day_is_not_itself_the_window_start(real_plan):
+    """10-09 is a flight day, not an arrival day — B7 has nothing to say about
+    it. B6 is the rule that governs flight days, and it reads the flight dates
+    passed in rather than these anchors."""
+    d = date(2026, 9, 10)
+    week = real_plan.week_for_date(d)
+    proposed = ProposedSchedule(week=week.week, long_run_date=d)
+    result = check_schedule(proposed, real_plan)
+    assert not any(v.rule_id == "B7" for v in result.violations)
+
+
 def test_full_italy_block_realistic_scenario_flags_correctly(real_plan):
     """A realistic Italy-week proposal: opportunistic long run 5 days after
     arrival (fine), nothing scheduled in the easy-only window."""

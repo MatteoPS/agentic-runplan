@@ -1,5 +1,6 @@
 from datetime import date
 
+from mc import clock
 from mc import traininglog as tlog
 
 
@@ -152,12 +153,7 @@ def test_fill_pending_actuals_skips_already_filled_rows(tmp_path):
 def test_fill_pending_actuals_default_up_to_is_yesterday(tmp_path, monkeypatch):
     import datetime as dt_module
 
-    class FixedDate(dt_module.date):
-        @classmethod
-        def today(cls):
-            return dt_module.date(2026, 7, 28)
-
-    monkeypatch.setattr(tlog, "date", FixedDate)
+    monkeypatch.setattr(clock, "today", lambda: dt_module.date(2026, 7, 28))
     path = tmp_path / "training-log.md"
     tlog.save_log(
         [

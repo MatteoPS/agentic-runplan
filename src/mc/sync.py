@@ -423,6 +423,19 @@ def _run_intervals(since_days: int) -> tuple[SourceReport, list[dict[str, Any]]]
     most_recent = max(starts) if starts else None
     staleness = _staleness_hours(most_recent)
 
+    # Say what the streams cache did. It is committed, so its growth is the
+    # repo's growth, and a fetch count that only ever appears in a debugger is
+    # how an unbounded download becomes normal without anyone noticing.
+    stream_notes = [
+        f"streams: {result.streams_fetched} fetched, {result.streams_cached} already cached"
+        + (f", {result.streams_pruned} pruned" if result.streams_pruned else "")
+    ]
+    if result.location:
+        stream_notes.append(
+            f"location from {result.location.get('start_date_local', '?')[:10]} "
+            f"({result.location.get('lat')}, {result.location.get('lon')})"
+        )
+
     report = SourceReport(
         requested=True,
         ok=True,
@@ -432,6 +445,7 @@ def _run_intervals(since_days: int) -> tuple[SourceReport, list[dict[str, Any]]]
         most_recent_activity_start=most_recent,
         staleness_hours=staleness,
         stale_gt_36h=(staleness is not None and staleness > 36),
+        notes=stream_notes,
     )
     return report, result.activities
 

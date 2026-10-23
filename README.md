@@ -18,7 +18,7 @@ The mechanism is NOT marathon or running-specific. Swap in a different plan and 
   E  anti-drift      — every deviation logged with a reason code
   ```
 - **Data** — Garmin Connect + intervals.icu, cross-checked against each
-  other, feeding real numbers into every decision.
+  other and normalised to one shape, so either can run the system alone.
 - **Agent** — [Claude Code](https://claude.com/product/claude-code) slash
   commands (`/daily`, `/plan`, `/preview`, `/week`, `/travel`) run it
   day-to-day, governed by `CLAUDE.md`.
@@ -31,10 +31,16 @@ See `examples/` for fabricated sample output (what `/daily` actually
 produces) without any of my real training or health data.
 
 **Personal data never lives in this repo.** `out/`, `log/` and `data/` are
-gitignored here, and in my own setup `MC_STATE_DIR` points them at a separate
-*private* repo entirely — so the split is structural rather than a matter of
+gitignored here, and `MC_STATE_DIR` can point them at a separate *private*
+repo entirely — so the split is structural rather than a matter of
 remembering. Unset, everything falls back to this checkout and behaves as a
 normal single-repo project. See [Private state](#private-state-optional).
+
+*(This public repo is a showcase, refreshed from a private one that holds the
+code and my real training data together. I ran the two-repo split above from
+02-08 to 12-08-2026 and moved off it — not because it was wrong, but because
+running the system from a phone needs a single repo a cloud session can clone
+and run. `MC_STATE_DIR` still works exactly as described if you want it.)*
 
 ## What it actually does
 
@@ -55,8 +61,11 @@ normal single-repo project. See [Private state](#private-state-optional).
 - **Reads the metrics your watch already recorded and nobody looked at** —
   cadence, elevation gain, grade-adjusted vs. raw pace, and for longer runs
   whether cadence, *stride length* and grade-adjusted pace held from the first
-  third to the last. All of it parsed from data already on disk: **zero extra
-  API calls**. A 166 spm average over 10 miles is equally consistent with
+  third to the last. On the Garmin side this is **zero extra API calls** — the
+  per-sample payload was already being fetched and thrown away. (intervals.icu
+  serves the same analysis, but there the streams are one extra call per long
+  run, made once and then cached.) A 166 spm average over 10 miles is equally
+  consistent with
   holding 166 and with running 172 then 160; only the split can tell you
   which. And cadence alone isn't enough — in the 2025 NYC marathon that fed
   this design, cadence *rose* over the closing miles while stride length fell
@@ -118,6 +127,13 @@ INTERVALS_ATHLETE_ID=iXXXXXX
 Settings page. Your intervals.icu account needs to actually have Garmin
 connected to it (in intervals.icu's own settings) for it to have any
 activity history to reconcile against.
+
+These two are **not optional extras**. intervals.icu is a complete substitute
+for Garmin here — activities, per-sample form streams, and the HRV / sleep /
+resting-HR the readiness rules spend — normalised into one shape by
+`src/mc/sources.py`, so a machine holding only these two values runs the whole
+system. It is also the safer credential: a scoped key meant to be handed to
+third-party tools, revocable on its own, and unable to reach back into Garmin.
 
 First run needs to happen in your own terminal, not through an agent — if
 your Garmin account has MFA on (probably does), it'll prompt for a code
@@ -251,7 +267,7 @@ Everything runs as `uv run mc <command>`.
 | `mc drift [--weeks N]`                                     | Plain-language summary of the trailing 4 weeks: miles short, which days deviated, which reason codes recur, overrides against the limit of 2. Counts and dates only — never a diagnosis. |
 | `mc override "<reason>" --code CODE`                       | Append a §6 E4 override to `context/overrides.md`. Only ever run after the literal `OVERRIDE:` string is typed — never inferred. |
 | `mc export`                                                | Copy `out/*.html` and `today.md` into `MC_EXPORT_DIR`. Runs automatically at the end of `mc render --all`; this is the manual re-copy. |
-| `mc state [--check \| --save "msg"]`                       | Guard and sync the private state repo. `--check` refuses to proceed from a checkout that's behind; `--save` commits and pushes. No-op unless `MC_STATE_DIR` is set. |
+| `mc state [--check \| --save "msg"]`                       | Guard and sync the private state repo. `--check` refuses to proceed from a checkout that's behind; `--save` commits and pushes. Active whenever `STATE_ROOT` is a git repo; `MC_STATE_GIT=off` disables it. |
 
 ## Project layout
 
@@ -269,7 +285,7 @@ out/             today.md/.html, dashboard.html — real data
 examples/        fabricated sample output/logs/data showing the shape of the above without real data
 .claude/commands/ the slash commands (daily, plan, preview, week, travel, italy, push)
 docs/            devlog.md (why the system changed, newest first), todo-review.md
-tests/           pytest — 303 tests covering the rule engine, sync reconciliation, the equivalence
+tests/           pytest — 508 tests covering the rule engine, sync reconciliation, the equivalence
                  engine, digest generation, strength progression, and push.py, the week layout, drift and
                  the headless-auth path, run against synthetic
                  fixtures and, where it matters (like the travel-block dates), the real frozen plan
@@ -286,7 +302,7 @@ documentation.
 uv run pytest
 ```
 
-303 tests, no network calls — everything is checked against either a
+508 tests, no network calls — everything is checked against either a
 synthetic plan fixture built to exercise every block type, or the real
 frozen `plan.lock.json` where the test genuinely needs real dates (the
 travel-block arrival/return windows) or wants to confirm the actual frozen

@@ -5,7 +5,15 @@ shuffling machinery, and show a clear before/after.
 This rewrites the persisted day layout and can touch `log/`, so take the
 writer lease first — `mc state --claim "travel reshuffle"` — and
 `mc state --save "travel reshuffle DD-MM"` once the new layout is agreed.
-Refusals mean the same three things as in `/daily` step 0.
+Refusals mean the same three things as in `/daily` step 1.
+
+**If the trip crosses timezones and lasts more than a day or two, ask whether
+to set `MC_TZ`.** The training day is the civil day where I am; leave it on
+`America/New_York` in Tokyo and every morning session logs against the previous
+day. Set it on arrival, set it back on return, and say both out loud — a zone
+left behind after a flight is a silent, week-long version of exactly the bug
+this exists to prevent. (`mc today` names the zone every run. For the known
+Italy block, `/italy` already carries this.)
 
 For each affected week:
 

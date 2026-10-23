@@ -4,7 +4,7 @@ import json
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,6 +16,7 @@ from garminconnect import (
     GarminConnectTooManyRequestsError,
 )
 
+from mc import clock
 from mc import config as cfg
 
 # --- exceptions -------------------------------------------------------------
@@ -196,7 +197,7 @@ def _envelope(data: Any, *, source: str) -> dict[str, Any]:
 def pull_activities(
     client: Garmin, since_days: int, *, force: bool = False
 ) -> list[dict[str, Any]]:
-    end = date.today()
+    end = clock.today()
     start = end - timedelta(days=since_days)
     activities = _call(
         f"get_activities_by_date({start},{end})",
@@ -257,7 +258,7 @@ def pull_daily_wellness(
     }
 
     for offset in range(lookback_days):
-        cdate = (date.today() - timedelta(days=offset)).isoformat()
+        cdate = (clock.today() - timedelta(days=offset)).isoformat()
         for metric, fn in calls.items():
             metric_path = wellness_dir / metric / f"{cdate}.json"
             if not force and metric_path.exists():
@@ -284,7 +285,7 @@ def _jitter() -> float:
 
 
 def pull_body_battery(client: Garmin, since_days: int) -> list[dict[str, Any]]:
-    end = date.today()
+    end = clock.today()
     start = end - timedelta(days=since_days)
     data = _call(
         f"get_body_battery({start},{end})",
@@ -319,6 +320,83 @@ def pull_lactate_threshold(client: Garmin) -> dict[str, Any]:
     return data
 
 
+def resolve_device_id() -> str | None:
+    """The watch's device id, read off the **cached** training_status payload
+    rather than fetched — `get_devices()` would be a whole extra call to learn
+    something already sitting on disk. Newest cached day wins; None when
+    nothing is cached yet (a first-ever sync), which is not an error.
+    """
+    status_dir = cfg.RAW_GARMIN_DIR / "wellness" / "training_status"
+    if not status_dir.exists():
+        return None
+    for f in sorted(status_dir.glob("20??-??-??.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text()).get("data") or {}
+            devices = (
+                data.get("mostRecentTrainingStatus", {})
+                .get("latestTrainingStatusData", {})
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        for device_id in devices:
+            if str(device_id).isdigit():
+                return str(device_id)
+    return None
+
+
+def pull_user_hr_settings(client: Garmin) -> dict[str, Any]:
+    """Max HR and the HR-zone configuration, snapshotted **dated** as well as
+    latest.
+
+    Every other pull here either takes a date parameter or is a rolling window
+    that can be re-fetched. These endpoints answer only "what is the setting
+    right now" — Garmin Connect exposes no history for them anywhere — so a
+    settings change is *less* recoverable than the 7-day wellness window, not
+    more. The dated file is the whole point: it is the only way this system
+    will ever be able to say when Max HR changed, and it costs one file a day.
+
+    **Two endpoints, one envelope**, which is a deliberate break from the
+    one-call-one-file convention above: a snapshot of "my HR configuration on
+    day N" is a single fact, and splitting it across two directories would mean
+    reading a settings change out of two files that can fall out of step when
+    one call fails and the other does not.
+
+    `get_userprofile_settings()` is deliberately **not** among them, despite
+    the name. It was tried first and checked against the live response
+    (20-08-2026): it returns locale and display preferences — number format,
+    time zone, `heartRateFormat` meaning the string "bpm" — and carries no
+    heart rate *value* of any kind.
+    """
+    user_settings = _call("get_user_profile()", client.get_user_profile)
+    zones = _call("get_heart_rate_zones()", client.get_heart_rate_zones)
+    envelope = _envelope(
+        {"user_settings": user_settings, "heart_rate_zones": zones},
+        source="get_user_profile+get_heart_rate_zones",
+    )
+    today = clock.today().isoformat()
+    hr_dir = cfg.RAW_GARMIN_DIR / "wellness" / "hr_settings"
+    _write_json(hr_dir / f"{today}.json", envelope)
+    _write_json(hr_dir / "latest.json", envelope)
+    return envelope["data"]
+
+
+def pull_device_settings(client: Garmin, device_id: str) -> dict[str, Any]:
+    """The watch's own settings, which is where the Max HR / lactate-threshold
+    **autodetect toggles** live — a different question from the account's
+    current Max HR value, and the one that explains why a value did or did not
+    move after a hard effort. Dated for the same reason as the HR settings.
+    """
+    data = _call(
+        f"get_device_settings({device_id})", client.get_device_settings, device_id
+    )
+    envelope = _envelope(data, source="get_device_settings")
+    today = clock.today().isoformat()
+    dev_dir = cfg.RAW_GARMIN_DIR / "wellness" / "device_settings"
+    _write_json(dev_dir / f"{today}.json", envelope)
+    _write_json(dev_dir / "latest.json", envelope)
+    return data
+
+
 def estimate_call_count(
     since_days: int, wellness_lookback_days: int = WELLNESS_LOOKBACK_DAYS
 ) -> dict[str, int]:
@@ -348,7 +426,9 @@ def estimate_call_count(
     wellness_calls = max(0, wellness_lookback_days - cached_wellness_days) * len(
         WELLNESS_METRICS
     )
-    fixed_calls = 3  # body_battery + race_predictions + lactate_threshold
+    # body_battery + race_predictions + lactate_threshold + device_settings,
+    # plus the two calls behind user_hr_settings (user profile + HR zones).
+    fixed_calls = 6
     return {
         "activities_list": activities_list_call,
         "activity_details_est": detail_calls,
@@ -365,6 +445,8 @@ class GarminPullResult:
     body_battery: list[dict[str, Any]] | None
     race_predictions: dict[str, Any] | None
     lactate_threshold: dict[str, Any] | None
+    user_hr_settings: dict[str, Any] | None = None
+    device_settings: dict[str, Any] | None = None
     wellness_gaps: list[tuple[str, str]] = field(default_factory=list)
     supplementary_failures: dict[str, str] = field(default_factory=dict)
 
@@ -407,12 +489,35 @@ def sync_garmin(
     except GarminSyncError as e:
         supplementary_failures["lactate_threshold"] = str(e)
 
+    user_hr_settings: dict[str, Any] | None = None
+    try:
+        user_hr_settings = pull_user_hr_settings(client)
+    except GarminSyncError as e:
+        supplementary_failures["user_hr_settings"] = str(e)
+
+    # Best-effort: the device id comes off cached training_status, so on a
+    # first-ever sync there is nothing to resolve and this is skipped rather
+    # than spending a get_devices() call to find out.
+    device_settings: dict[str, Any] | None = None
+    device_id = resolve_device_id()
+    if device_id is None:
+        supplementary_failures["device_settings"] = (
+            "no device id in cached training_status — skipped, no call made"
+        )
+    else:
+        try:
+            device_settings = pull_device_settings(client, device_id)
+        except GarminSyncError as e:
+            supplementary_failures["device_settings"] = str(e)
+
     return GarminPullResult(
         activities=activities,
         wellness=wellness,
         body_battery=body_battery,
         race_predictions=race_predictions,
         lactate_threshold=lactate_threshold,
+        user_hr_settings=user_hr_settings,
+        device_settings=device_settings,
         wellness_gaps=gaps,
         supplementary_failures=supplementary_failures,
     )

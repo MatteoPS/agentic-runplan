@@ -52,8 +52,34 @@ OUT_DIR = STATE_ROOT / "out"
 
 
 def state_is_split() -> bool:
-    """True once MC_STATE_DIR points somewhere other than the code checkout."""
+    """True once MC_STATE_DIR points somewhere other than the code checkout.
+
+    Descriptive only. This is *not* the right gate for the writer guard — see
+    state_git_enabled().
+    """
     return STATE_ROOT != PROJECT_ROOT
+
+
+_OFF_VALUES = {"off", "0", "false", "no"}
+
+
+def state_git_enabled() -> bool:
+    """Whether the writer guard should do git work: run the behind-check,
+    commit/push the lease, commit state.
+
+    This used to be state_is_split(), which was a proxy that quietly stopped
+    being true the moment code and state lived in one repo — and then the guard
+    silently did nothing. That is exactly backwards: the guard exists because
+    three state files are whole-file rewrites with no merge logic
+    (log/training-log.md, data/strength_schedule.json, data/pushed.json), and
+    that is a property of *those files*, not of whether they happen to sit
+    beside the code. What actually matters is whether STATE_ROOT is a git repo
+    — i.e. whether there is any history to lose a write from.
+
+    MC_STATE_GIT=off opts out entirely, for a plain local checkout with no
+    second machine and no wish for per-ritual commits.
+    """
+    return (os.environ.get("MC_STATE_GIT") or "").strip().lower() not in _OFF_VALUES
 
 
 class ConfigError(Exception):

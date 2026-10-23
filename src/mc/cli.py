@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timedelta
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from mc import clock
 from mc import config as cfg
 from mc import digest as digest_mod
 from mc import drift as drift_mod
@@ -17,6 +19,7 @@ from mc import plan as plan_mod
 from mc import planning as planning_mod
 from mc import push as push_mod
 from mc import render as render_mod
+from mc import sources
 from mc import rules as rules_mod
 from mc import strength as strength_mod
 from mc import state as state_mod
@@ -35,11 +38,11 @@ def _parse_ddmm(s: str, year: int = 2026) -> date:
 
 
 def _current_week(p: plan_mod.PlanLock, as_of: date | None = None) -> plan_mod.PlanWeek:
-    return p.week_for_date(as_of or date.today())
+    return p.week_for_date(as_of or clock.today())
 
 
 def _actuals_for(p: plan_mod.PlanLock, week: plan_mod.PlanWeek) -> digest_mod.WeekActuals:
-    activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
+    activities = sources.activities()
     return digest_mod.actuals_for_plan_week(activities, week.wc, week.wc + timedelta(days=6))
 
 
@@ -85,12 +88,12 @@ def digest(date_: str = typer.Option(None, "--date", help="DD-MM, defaults to to
     any pending Actual entries in log/training-log.md from freshly-synced
     data — this is the natural point to do it, since digest always runs
     right after mc sync in the daily ritual."""
-    as_of = _parse_ddmm(date_) if date_ else date.today()
+    as_of = _parse_ddmm(date_) if date_ else clock.today()
     path = digest_mod.write_digest(as_of)
     console.print(f"Digest written to {path}")
     console.print(path.read_text())
 
-    activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
+    activities = sources.activities()
     filled = tlog_mod.fill_pending_actuals(activities, up_to=as_of - timedelta(days=1))
     if filled:
         console.print(f"[dim]Backfilled {filled} pending entr{'y' if filled == 1 else 'ies'} in {cfg.TRAINING_LOG_PATH}[/dim]")
@@ -114,10 +117,10 @@ def weather(
     Heat levels are none/noticeable/hard/extreme — input you cite when
     exercising §6 C2, never a trigger that fires by itself.
     """
-    as_of = _parse_ddmm(date_) if date_ else date.today()
+    as_of = _parse_ddmm(date_) if date_ else clock.today()
 
     if refresh:
-        activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
+        activities = sources.activities()
         location = weather_mod.resolve_location(activities)
         if location is None:
             console.print(
@@ -195,6 +198,31 @@ def weather(
     )
 
 
+@app.command(name="today")
+def today_cmd():
+    """The training day — the DD-MM every file written today should carry.
+
+    Run this first in every ritual, and take the date from it. The reason is
+    not pedantry: this project runs from a container whose clock is UTC, so
+    from 20:00 Eastern onward *both* `date` and the agent's own sense of the
+    day are already tomorrow. A `# 25-08` header written on the evening of the
+    24th is how `out/today.md` gets deleted as stale by the next `mc tidy`,
+    and how a session lands on the wrong training-log row.
+    """
+    console.print(f"[bold]{clock.describe()}[/bold]")
+    note = clock.system_note()
+    if note:
+        console.print(f"[yellow]{note}[/yellow]")
+    zone = clock.resolve()
+    if zone.fell_back:
+        console.print(
+            f"[red]Timezone {zone.name!r} could not be loaded — falling back to the "
+            f"system clock, which may be wrong. Install tzdata or fix MC_TZ.[/red]"
+        )
+    source = f"MC_TZ={zone.name}" if os.environ.get(clock.TZ_ENV) else f"default ({clock.DEFAULT_TZ}, MC_TZ unset)"
+    console.print(f"[dim]zone from {source}[/dim]")
+
+
 @app.command()
 def status():
     """Week N of 14, plan vs actual, compliance, ratios."""
@@ -203,7 +231,7 @@ def status():
     block = p.block_for(week)
     actuals = _actuals_for(p, week)
 
-    days_to_race = (p.race_date - date.today()).days
+    days_to_race = (p.race_date - clock.today()).days
     console.print(
         f"[bold]Week {week.week}/{len(p.weeks)} · w/c {week.wc.strftime('%d-%m')} · "
         f"block {week.block}[/bold] · {days_to_race} days to race"
@@ -243,17 +271,16 @@ def check(
     projection under the floor, so real findings survive.
     """
     p = plan_mod.load_plan()
-    as_of = _parse_ddmm(as_of_s) if as_of_s else date.today()
+    as_of = _parse_ddmm(as_of_s) if as_of_s else clock.today()
     week = _current_week(p, as_of)
     week_end = week.wc + timedelta(days=6)
-    activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
+    activities = sources.activities()
     layout = layout_mod.get_layout(layout_mod.week_start_for(as_of))
 
     if layout is not None and not actuals_only:
         by_day = digest_mod.actuals_by_day(activities, week.wc, week_end)
         projection = planning_mod.project_week(week, layout, by_day, as_of)
-        block = p.block_for(week)
-        floor_mi = block.compliance_floor * week.run_miles
+        band = rules_mod.week_band(week, p)
         console.print(f"[bold]Week {week.week} · w/c {week.wc.strftime('%d-%m')}[/bold] — projected")
         console.print(
             f"  actual    {projection.banked_miles:g} mi over "
@@ -265,9 +292,11 @@ def check(
             + (f" ({', '.join(projection.remaining_days)})" if projection.remaining_days else "")
         )
         console.print(
-            f"  projected {projection.proposed.run_miles:g} mi vs plan {week.run_miles:g} mi "
-            f"· floor {floor_mi:.1f} mi ({block.compliance_floor:.0%})"
+            f"  projected {band.describe(projection.proposed.run_miles)} "
+            f"· plan {week.run_miles:g} mi"
         )
+        if band.note:
+            console.print(f"[dim]  {band.note}[/dim]")
         result = rules_mod.check_week(projection.proposed, p)
         if result.allowed:
             console.print("[green]No violations.[/green]")
@@ -381,13 +410,25 @@ def equiv(session: str = typer.Argument(..., help='e.g. "8 mi easy"')):
 def fuel(
     session: str = typer.Argument(..., help='e.g. "16 mi long"'),
     week_num: int = typer.Option(None, "--week", help="Plan week, defaults to today's"),
+    fasted: bool = typer.Option(
+        False, "--fasted", help="No real breakfast — first gel at 20 min, not 40"
+    ),
+    pace: float = typer.Option(
+        None, "--pace", help="Min/mile for the duration estimate, defaults to easy pace"
+    ),
+    prep_only: bool = typer.Option(
+        False, "--prep", help="Just the before-you-go checklist (what /preview needs)"
+    ),
 ):
     """In-run carbohydrate plan for a long session. Silent for short ones."""
     parsed = eq.parse_session(session)
     if week_num is None:
         week_num = _current_week(plan_mod.load_plan()).week
 
-    plan = fuel_mod.build_plan(parsed.distance_mi, week_num)
+    kwargs = {"fasted": fasted}
+    if pace is not None:
+        kwargs["pace_min_per_mi"] = pace
+    plan = fuel_mod.build_plan(parsed.distance_mi, week_num, **kwargs)
     if plan is None:
         console.print(
             f"{parsed.distance_mi:g} mi is under "
@@ -397,6 +438,11 @@ def fuel(
 
     console.print(f"[bold]Fuelling — {session}, week {week_num}[/bold]")
     console.print(plan.summary)
+    for line in fuel_mod.prep_lines(plan):
+        console.print(f"  {line}")
+    if prep_only:
+        return
+    console.print("")
     for line in fuel_mod.plan_lines(plan):
         console.print(f"  {line}")
     console.print(
@@ -422,21 +468,32 @@ def state_cmd(
     ),
     release_: bool = typer.Option(False, "--release", help="Drop the writer lease without saving (abandoned ritual)"),
     force: bool = typer.Option(False, "--force", help="With --claim: take over a lease held by another device/session"),
+    again: bool = typer.Option(
+        False, "--again", help="With --claim 'daily ...': rewrite a day /daily has already written"
+    ),
 ):
     """Guard and sync the private state repo.
 
-    Without flags, reports where state lives, whether it's in sync, and who
-    holds the writer lease.
+    Without flags, reports where state lives, whether it's in sync, who holds
+    the writer lease, and whether today's /daily has already run.
     """
     if claim:
+        mismatch = state_mod.purpose_day_mismatch(claim)
+        if mismatch:
+            console.print(f"[yellow]{mismatch}[/yellow]")
         try:
-            lease, warning = state_mod.claim(claim, force=force)
+            lease, warning = state_mod.claim(claim, force=force, again=again)
         except state_mod.StateError as e:
             console.print(f"[red]{e}[/red]")
             raise typer.Exit(1) from e
         console.print(f"[green]writer lease held by[/green] {lease.device} — {lease.purpose}")
         if warning:
             console.print(f"[yellow]{warning}[/yellow]")
+        if again and state_mod.is_daily_purpose(claim):
+            console.print(
+                "[yellow]--again: rewriting a day /daily has already written. "
+                "out/today.md and today's training-log row will be replaced.[/yellow]"
+            )
         return
 
     if release_:
@@ -470,14 +527,23 @@ def state_cmd(
         console.print(f"[dim]writer lease: {held.describe()} — claimable[/dim]")
     else:
         console.print(f"[red]writer lease: {held.describe()} — do not write here[/red]")
-    if not st.is_split:
+
+    ran = state_mod.daily_run_for(root=st.root)
+    if ran is None:
+        console.print("[dim]today's /daily: not written yet[/dim]")
+    else:
+        console.print(f"[yellow]today's /daily: already written — {ran.describe()}[/yellow]")
+
+    if not st.git_enabled:
         console.print(
-            "[dim]Not split — state lives in the code checkout. Set MC_STATE_DIR in .env "
-            "to point at a private state repo.[/dim]"
+            "[yellow]MC_STATE_GIT=off — the behind-check and state commits are disabled. "
+            "Nothing guards two-machine writes.[/yellow]"
         )
         return
     if not st.is_git_repo:
-        console.print("[yellow]MC_STATE_DIR is set but isn't a git repo — nothing guards two-machine writes.[/yellow]")
+        console.print(
+            f"[yellow]{st.root} isn't a git repo — nothing guards two-machine writes.[/yellow]"
+        )
         return
 
     console.print(f"behind {st.behind} · ahead {st.ahead} · {'clean' if st.clean else f'{len(st.dirty)} uncommitted'}")
@@ -543,7 +609,7 @@ def plan_cmd(
     types, strength days, rule status. The day's judgement calls belong to
     /daily and /preview, which have the answers this can't know.
     """
-    start_date = _parse_ddmm(start) if start else date.today()
+    start_date = _parse_ddmm(start) if start else clock.today()
     p = plan_mod.load_plan()
     look = planning_mod.lookahead(p, start_date, days=days)
 
@@ -642,9 +708,23 @@ def layout_cmd(
     # letting it surface days later in a `mc check`.
     try:
         p = plan_mod.load_plan()
-        result = rules_mod.check_week(layout_mod.as_proposed_week(wl, week_num), p)
+        proposed = layout_mod.as_proposed_week(wl, week_num)
+        result = rules_mod.check_week(proposed, p)
+        band = rules_mod.week_band(p.week_by_number(week_num), p)
     except FileNotFoundError:
         return
+
+    # Where the week sits in its legal band. A layout flush against either
+    # edge passes today and needs shaving tomorrow — see rules.WeekBand.
+    console.print(f"  {band.describe(proposed.run_miles)}")
+    below, above = band.headroom(proposed.run_miles)
+    if band.note:
+        console.print(f"[dim]  {band.note}[/dim]")
+    elif min(below, above) < layout_mod.QUANTUM_MI:
+        console.print(
+            f"[yellow]  Laid out flush against the band edge — one eyeballed route "
+            f"moves this week out of compliance. Aim nearer {band.midpoint_mi:g} mi.[/yellow]"
+        )
     if result.allowed:
         console.print("[green]layout passes §6[/green]")
     else:
@@ -781,6 +861,11 @@ def _report_tidy(as_of: date | None = None, dry_run: bool = False) -> None:
     verb = "would remove" if dry_run else "removed"
     for removal in result.removed:
         console.print(f"[dim]{verb} {removal.name} — {removal.reason}[/dim]")
+    for path in result.protected:
+        console.print(
+            f"[yellow]{path.name}'s day has passed, but git has no copy of it — left in "
+            f"place. `mc state --save` (or commit it) and it goes on the next run.[/yellow]"
+        )
     for path in result.undated:
         console.print(
             f"[yellow]{path.name} declares no day (no `# DD-MM` header, no -DD-MM suffix) "
@@ -825,7 +910,7 @@ def render_cmd(
                 )
         try:
             plan = plan_mod.load_plan()
-            activities = digest_mod._load_latest(cfg.RAW_GARMIN_DIR, "activities")
+            activities = sources.activities()
             dash_md = render_mod.write_dashboard_md(plan, activities)
             console.print(f"wrote {dash_md}")
             if html:
@@ -855,7 +940,7 @@ def render_cmd(
 def log(text: str = typer.Argument(..., help="Free text to append to today's session log")):
     """Append free text to today's session log."""
     cfg.LOG_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    today = date.today()
+    today = clock.today()
     path = cfg.LOG_SESSIONS_DIR / f"{today.isoformat()}.md"
     is_new = not path.exists() or path.stat().st_size == 0
     timestamp = datetime.now().strftime("%H:%M")
@@ -875,7 +960,7 @@ def propose(
     column). The Actual column gets filled in automatically by `mc digest`
     once real data for that date is available — see the file itself for
     the running proposed-vs-actual table."""
-    as_of = _parse_ddmm(date_) if date_ else date.today()
+    as_of = _parse_ddmm(date_) if date_ else clock.today()
     tlog_mod.record_proposed(as_of, text)
     console.print(f"Recorded in {cfg.TRAINING_LOG_PATH}")
 

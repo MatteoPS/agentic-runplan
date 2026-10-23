@@ -4,10 +4,11 @@ mc sync (real network calls) and mc log (appends to the real session log) are
 exercised manually, not here."""
 
 import re
-from datetime import date, timedelta
+from datetime import timedelta
 
 from typer.testing import CliRunner
 
+from mc import clock
 from mc import config as cfg
 from mc import layout as layout_mod
 from mc import plan as plan_mod
@@ -78,10 +79,43 @@ def test_equiv_long_run_never_a_substitute():
     assert "not a substitute" in result.output
 
 
-def test_digest_runs():
+def test_digest_runs(tmp_path, monkeypatch):
+    """Reads the real cached data on purpose, writes nowhere near the real
+    state repo. `mc digest` doesn't only render — it also backfills pending
+    rows in `log/training-log.md`, so before this was isolated every full
+    `uv run pytest` silently rewrote the training record, flipping yesterday's
+    `*(pending)*` to `Nothing logged` against data the suite happened to see.
+    That is one of the three whole-file-rewrite state files the writer lease
+    exists to protect. Same reasoning as test_render_all_does_not_crash."""
+    monkeypatch.setattr(cfg, "DIGEST_DIR", tmp_path / "digest")
+    log_copy = tmp_path / "training-log.md"
+    # A checkout without the state repo (the public showcase, its CI) has no
+    # training log; an empty one still exercises the command.
+    real_log = cfg.TRAINING_LOG_PATH
+    log_copy.write_text(real_log.read_text() if real_log.exists() else "")
+    monkeypatch.setattr(cfg, "TRAINING_LOG_PATH", log_copy)
+
     result = runner.invoke(app, ["digest"])
     assert result.exit_code == 0
     assert "Data health" in result.output
+
+
+def test_training_log_path_is_resolved_at_call_time():
+    """The regression guard for the above. These used to bind
+    `cfg.TRAINING_LOG_PATH` as an import-time default argument, which made the
+    real training log unmonkeypatchable — isolation was impossible, not merely
+    forgotten. Resolving at call time (as drift.py already did) is what makes
+    the test above able to work at all."""
+    import inspect
+
+    from mc import traininglog as tlog
+
+    for fn in (tlog.load_log, tlog.save_log, tlog.record_proposed, tlog.fill_pending_actuals):
+        sig = inspect.signature(fn)
+        assert sig.parameters["path"].default is None, (
+            f"{fn.__name__} binds a path at import time; monkeypatching "
+            f"cfg.TRAINING_LOG_PATH will not reach it"
+        )
 
 
 def test_render_all_does_not_crash(tmp_path, monkeypatch):
@@ -107,7 +141,7 @@ def test_render_without_html_writes_no_html(tmp_path, monkeypatch):
 def test_render_html_flag_writes_twins(tmp_path, monkeypatch):
     out = tmp_path / "out"
     out.mkdir()
-    (out / "today.md").write_text(f"# {date.today().strftime('%d-%m')}\n\nbody\n")
+    (out / "today.md").write_text(f"# {clock.today().strftime('%d-%m')}\n\nbody\n")
     monkeypatch.setattr(cfg, "OUT_DIR", out)
     result = runner.invoke(app, ["render", "--all", "--html"])
     assert result.exit_code == 0

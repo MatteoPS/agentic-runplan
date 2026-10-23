@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+from mc import clock
 from mc import config as cfg
 from mc import digest as digest_mod
 from mc import sync
@@ -177,7 +178,7 @@ def is_stale(md_path: Path, as_of: date | None = None) -> bool:
     header = target_date_of(md_path)
     if header is None:
         return True  # a provisional file that won't say which day it's for is not trustworthy
-    as_of = as_of or date.today()
+    as_of = as_of or clock.today()
     return header != as_of.strftime("%d-%m") and header != (as_of + timedelta(days=1)).strftime("%d-%m")
 
 
@@ -218,7 +219,7 @@ def _bar(pct: float, color: str = "currentColor") -> str:
 def _actuals_by_week(
     plan: PlanLock, garmin_activities: list[dict[str, Any]], as_of: date | None = None
 ) -> dict[int, dict[str, Any]]:
-    as_of = as_of or date.today()
+    as_of = as_of or clock.today()
     result: dict[int, dict[str, Any]] = {}
     for week in plan.weeks:
         actuals = digest_mod.actuals_for_plan_week(
@@ -246,7 +247,7 @@ HIGDON_ORIGINAL: dict[int, tuple[float, float]] = {
 
 
 def build_dashboard_html(plan: PlanLock, garmin_activities: list[dict[str, Any]], as_of: date | None = None) -> str:
-    as_of = as_of or date.today()
+    as_of = as_of or clock.today()
     weeks_to_race = max(0, (plan.race_date - as_of).days // 7)
     actuals = _actuals_by_week(plan, garmin_activities, as_of=as_of)
 
@@ -317,7 +318,7 @@ is just a fixed same-distance-to-race reference point.</p>
 
 
 def build_dashboard_markdown(plan: PlanLock, garmin_activities: list[dict[str, Any]], as_of: date | None = None) -> str:
-    as_of = as_of or date.today()
+    as_of = as_of or clock.today()
     weeks_to_race = max(0, (plan.race_date - as_of).days // 7)
     actuals = _actuals_by_week(plan, garmin_activities, as_of=as_of)
 

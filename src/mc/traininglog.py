@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
+from mc import clock
 from mc import config as cfg
 from mc import digest as digest_mod
 from mc import sync
@@ -30,7 +31,8 @@ def _parse_ddmm(s: str) -> date:
     return date(_YEAR, int(month), int(day))
 
 
-def load_log(path=cfg.TRAINING_LOG_PATH) -> list[LogRow]:
+def load_log(path=None) -> list[LogRow]:
+    path = path or cfg.TRAINING_LOG_PATH
     if not path.exists():
         return []
     rows = []
@@ -42,7 +44,8 @@ def load_log(path=cfg.TRAINING_LOG_PATH) -> list[LogRow]:
     return rows
 
 
-def save_log(rows: list[LogRow], path=cfg.TRAINING_LOG_PATH) -> None:
+def save_log(rows: list[LogRow], path=None) -> None:
+    path = path or cfg.TRAINING_LOG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     ordered = sorted(rows, key=lambda r: r.date)
     lines = [_TITLE, "\n", _HEADER, _SEP]
@@ -51,7 +54,7 @@ def save_log(rows: list[LogRow], path=cfg.TRAINING_LOG_PATH) -> None:
     path.write_text("".join(lines))
 
 
-def record_proposed(d: date, proposed: str, *, path=cfg.TRAINING_LOG_PATH) -> None:
+def record_proposed(d: date, proposed: str, *, path=None) -> None:
     """Called when /daily writes today's plan. Appends a new row, or updates
     the Proposed cell in place if today's row already exists (e.g. /daily
     re-run same day) — never duplicates a date."""
@@ -92,13 +95,13 @@ def describe_actual_session(activities: list[dict[str, Any]], d: date) -> str:
 
 
 def fill_pending_actuals(
-    activities: list[dict[str, Any]], *, up_to: date | None = None, path=cfg.TRAINING_LOG_PATH
+    activities: list[dict[str, Any]], *, up_to: date | None = None, path=None
 ) -> int:
     """For every row still marked pending and dated on/before up_to (default
     yesterday — today's own session is presumably not done yet when /daily
     runs in the morning), fill the Actual column from synced data. Returns
     the number of rows updated."""
-    up_to = up_to or (date.today() - timedelta(days=1))
+    up_to = up_to or (clock.today() - timedelta(days=1))
     rows = load_log(path)
     updated = 0
     for r in rows:

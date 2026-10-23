@@ -394,7 +394,7 @@ Unit-test every rule, including travel edge cases.
      forward into a peak week)
   4. reduce — max 25%, requires a reason code, forbidden for the 18 and the 20
 - **B6** No long run within 24h of a flight over 4h, either direction.
-- **B7** After arrival in Italy (10-09) and after return to the US (30-09):
+- **B7** After arrival in Italy (11-09) and after return to the US (30-09):
   **first 3 days easy only.** No quality, no long run. Poor sleep is expected and
   pre-declared — this is not an override, it is the plan.
 - **B8** Max 5 consecutive running days (reduced from the usual 6, for shins),

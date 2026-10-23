@@ -94,7 +94,7 @@ def _fallback_day(week: PlanWeek, d: date, week_start: str, basis: Basis) -> Pla
     emit the day with the week's average running mileage and an explicit
     layout_known=False so the caller must say "layout not set for this week".
     """
-    per_running_day = round(week.run_miles / week.run_days, 1) if week.run_days else 0.0
+    per_running_day = layout_mod.quantize(week.run_miles / week.run_days) if week.run_days else 0.0
     return PlannedDay(
         date=d,
         ddmm=d.strftime("%d-%m"),
@@ -253,16 +253,21 @@ def project_week(
     # so the layout's figure only counts while that day is still ahead.
     long_run_mi = max(longest_actual, planned_long_ahead)
 
+    # One decimal place throughout. `banked` is measured and `remaining` is
+    # prescribed (already on layout.QUANTUM_MI), so neither carries a
+    # meaningful hundredth -- and printing "12.87 mi remaining" invited
+    # exactly the knife-edge, hundredth-shaving layouts the quantum exists to
+    # stop.
     return WeekProjection(
         proposed=rules_mod.ProposedWeek(
             week=week.week,
-            long_run_mi=round(long_run_mi, 2),
-            run_miles=round(banked + remaining, 2),
+            long_run_mi=round(long_run_mi, 1),
+            run_miles=round(banked + remaining, 1),
             run_days=run_days,
-            cross_minutes=round(cross, 2),
+            cross_minutes=round(cross, 1),
         ),
-        banked_miles=round(banked, 2),
-        remaining_miles=round(remaining, 2),
+        banked_miles=round(banked, 1),
+        remaining_miles=round(remaining, 1),
         elapsed_days=elapsed,
         remaining_days=ahead,
     )

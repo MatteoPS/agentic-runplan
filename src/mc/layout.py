@@ -28,7 +28,7 @@ docs/todo-review.md before this file is ever synced across machines.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 
 from mc import config as cfg
@@ -36,12 +36,40 @@ from mc import rules as rules_mod
 
 STATE_PATH = cfg.DATA_DIR / "week_layout.json"
 
+# Prescriptions are written to the nearest half mile, and nothing finer is
+# ever stored.
+#
+# A prescription of 5.11 mi is a lie about how running works: an outdoor
+# route is eyeballed on the way out to avoid a long walk home and comes back
+# a bit over or under, and even a treadmill is set by hand. The hundredths
+# were never a measurement -- they were the arithmetic of forcing a weekly
+# total to land inside the [floor, ceiling] band, one decimal place at a
+# time. w/c 10-08 carried days of 5.11 and 3.87 mi and had been revised 8
+# times, which is what that looks like from the outside.
+#
+# 0.5 mi is ~4-5 min at easy pace, below the resolution of any decision this
+# plan makes. Confirmed with me 14-08-2026.
+QUANTUM_MI = 0.5
+
+
+def quantize(miles: float) -> float:
+    """Snap a prescribed distance to the nearest QUANTUM_MI."""
+    return round(round(miles / QUANTUM_MI) * QUANTUM_MI, 1)
+
 # Session labels. "rest" is a real, deliberate entry rather than an absent day
 # -- a planned rest day and an unplanned gap are different things, and A10's
 # minimum-running-days check reads better when rest is explicit.
-SESSION_TYPES = frozenset({"rest", "easy", "pace", "long", "cross"})
+SESSION_TYPES = frozenset({"rest", "easy", "pace", "long", "race", "cross"})
 
-RUNNING_SESSIONS = frozenset({"easy", "pace", "long"})
+RUNNING_SESSIONS = frozenset({"easy", "pace", "long", "race"})
+
+# "race" exists to hold a measured distance rather than a prescribed one, and
+# it was added by the 0.5 mi quantum: a 5K is 3.1 mi because that is what a 5K
+# is, and quantizing it to 3.0 discards a fact to satisfy a display
+# convention. Without this the Percy Sutton 5K on 08-08 was silently rewritten.
+# Distinct from "pace" -- a 5.5 mi pace run is a prescription and *should*
+# snap; only the event distance is fixed.
+FIXED_DISTANCE_SESSIONS = frozenset({"long", "race"})
 
 
 class LayoutError(Exception):
@@ -80,11 +108,11 @@ class WeekLayout:
 
     @property
     def total_miles(self) -> float:
-        return round(sum(d.miles for d in self.days), 2)
+        return round(sum(d.miles for d in self.days), 1)
 
     @property
     def total_cross_minutes(self) -> float:
-        return round(sum(d.cross_minutes for d in self.days), 2)
+        return round(sum(d.cross_minutes for d in self.days), 1)
 
     @property
     def run_days(self) -> int:
@@ -112,10 +140,16 @@ def _save_state(state: dict) -> None:
 
 
 def _to_layout(week_start: str, entry: dict) -> WeekLayout:
+    # Quantized on the way in as well as the way out. `_write` guarantees
+    # nothing new lands on disk with hundredths, but this file is tracked
+    # state that syncs between devices (see CLAUDE.md's one-writer-per-day
+    # lease), so a phone still running an older client can put them back. A
+    # read that normalizes means no consumer ever has to care which client
+    # wrote the week.
     return WeekLayout(
         week_start=week_start,
         long_run_day=entry["long_run_day"],
-        days=[DayPlan(**d) for d in entry["days"]],
+        days=_quantize_days([DayPlan(**d) for d in entry["days"]]),
         revised=entry.get("revised", 0),
     )
 
@@ -142,8 +176,35 @@ def _validate(days: list[DayPlan], long_run_day: str) -> None:
         )
 
 
+def _quantize_days(days: list[DayPlan]) -> list[DayPlan]:
+    """Snap prescribed running distances to QUANTUM_MI.
+
+    Applied here rather than in the parser because this is the choke point --
+    everything that reaches disk goes through `_write`, whether it came from
+    `mc layout --set`, `--revise`, or a caller building DayPlans directly. A
+    layout on disk therefore cannot carry hundredths.
+
+    Two exemptions, both because the number is a measurement rather than a
+    prescription:
+
+    - **FIXED_DISTANCE_SESSIONS.** The long run's distance is frozen in
+      plan.lock.json under A1/A3 -- week 14's is the marathon itself (26.2) --
+      so snapping it to fit a display convention is the tail wagging the dog,
+      and would put every long run 0.2 mi from its own A1 tolerance for no
+      reason. A race's distance is fixed by the race.
+    - **Cross days**, whose number is minutes, not miles (see DayPlan).
+    """
+    return [
+        d
+        if d.session in FIXED_DISTANCE_SESSIONS or d.session == "cross"
+        else replace(d, miles=quantize(d.miles))
+        for d in days
+    ]
+
+
 def _write(week_start: str, days: list[DayPlan], long_run_day: str, revised: int) -> WeekLayout:
     _validate(days, long_run_day)
+    days = _quantize_days(days)
     state = _load_state()
     state[week_start] = {
         "long_run_day": long_run_day,
@@ -260,7 +321,7 @@ def as_proposed_week(layout: WeekLayout, week_num: int, cross_minutes: float | N
     return rules_mod.ProposedWeek(
         week=week_num,
         long_run_mi=long_run.miles if long_run else 0.0,
-        run_miles=round(sum(d.miles for d in layout.days if d.is_running), 2),
+        run_miles=round(sum(d.miles for d in layout.days if d.is_running), 1),
         run_days=layout.run_days,
         cross_minutes=layout.total_cross_minutes if cross_minutes is None else cross_minutes,
     )

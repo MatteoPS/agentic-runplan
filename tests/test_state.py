@@ -1,7 +1,9 @@
 import subprocess
+from datetime import date
 
 import pytest
 
+from mc import clock
 from mc import config as cfg
 from mc import state
 
@@ -41,23 +43,69 @@ def split(monkeypatch, repos):
     return repos
 
 
-# --- not split: the guard must stay out of the way ----------------------------------
+@pytest.fixture
+def merged(monkeypatch, repos):
+    """Code and state in ONE repo — MC_STATE_DIR unset, so state_is_split() is
+    False while the state still very much lives in a git repo with a remote.
 
-
-def test_unsplit_state_is_never_blocked(monkeypatch, tmp_path):
-    """Default single-machine setup — nothing to guard, nothing to refuse."""
-    monkeypatch.setattr(cfg, "STATE_ROOT", tmp_path)
+    This is the shape the guard used to fail open on: it gated every piece of
+    git work on is_split, so in a merged repo `mc state --save` released the
+    lease, committed nothing, and returned None — silently.
+    """
+    monkeypatch.setattr(cfg, "STATE_ROOT", repos["laptop"])
     monkeypatch.setattr(cfg, "state_is_split", lambda: False)
+    return repos
+
+
+# --- no git repo: the guard must stay out of the way --------------------------------
+
+
+def test_state_without_a_git_repo_is_never_blocked(monkeypatch, tmp_path):
+    """Plain directory — nothing to guard, nothing to refuse."""
+    monkeypatch.setattr(cfg, "STATE_ROOT", tmp_path)
     st = state.check(tmp_path)
-    assert not st.is_split
+    assert not st.is_git_repo
+    assert not st.guarded
     assert st.safe_to_write
 
 
-def test_split_but_not_a_git_repo_is_reported_not_fatal(monkeypatch, tmp_path):
+def test_missing_git_repo_is_reported_not_fatal(monkeypatch, tmp_path):
     monkeypatch.setattr(cfg, "STATE_ROOT", tmp_path)
-    monkeypatch.setattr(cfg, "state_is_split", lambda: True)
     st = state.check(tmp_path)
     assert not st.is_git_repo
+
+
+# --- the merged repo: the bug this gate change fixes --------------------------------
+
+
+def test_merged_repo_still_commits_and_pushes(merged):
+    """The regression. Not split, but a real repo — save() must do real work."""
+    (merged["laptop"] / "log" / "training-log.md").write_text("# Training log\n| 12-08 |\n")
+    assert state.save("daily 12-08", merged["laptop"]) == "daily 12-08"
+
+    fresh = merged["laptop"].parent / "fresh-merged"
+    subprocess.run(["git", "clone", "-q", str(merged["remote"]), str(fresh)], check=True)
+    assert "12-08" in (fresh / "log" / "training-log.md").read_text()
+
+
+def test_merged_repo_still_runs_the_behind_check(merged):
+    """The most serious of the four gates: check() skipped the behind-check
+    entirely when not split, which is the guard against dropping another
+    machine's writes."""
+    phone = merged["phone"]
+    (phone / "log" / "training-log.md").write_text("# Training log\n| from the phone |\n")
+    git(phone, "commit", "-qam", "phone writes")
+    git(phone, "push", "-q")
+
+    with pytest.raises(state.StateError, match="behind"):
+        state.check(merged["laptop"])
+
+
+def test_mc_state_git_off_disables_the_guard(monkeypatch, merged):
+    monkeypatch.setenv("MC_STATE_GIT", "off")
+    st = state.check(merged["laptop"])
+    assert not st.guarded
+    assert state.save("msg", merged["laptop"]) is None
 
 
 # --- the actual hazard --------------------------------------------------------------
@@ -115,8 +163,10 @@ def test_save_with_nothing_to_commit_is_a_no_op(split):
     assert state.save("nothing changed", split["laptop"]) is None
 
 
-def test_save_is_a_no_op_when_state_is_not_split(monkeypatch, tmp_path):
-    monkeypatch.setattr(cfg, "state_is_split", lambda: False)
+def test_save_is_a_no_op_without_a_git_repo(tmp_path):
+    """A plain directory has no history to commit to. Note this is the *only*
+    reason save() may no-op — being unsplit is not one, see
+    test_merged_repo_still_commits_and_pushes."""
     assert state.save("msg", tmp_path) is None
 
 
@@ -218,12 +268,115 @@ def test_a_stale_lease_file_is_treated_as_no_lease(split, as_laptop):
 
 
 def test_lease_works_without_git(monkeypatch, tmp_path):
-    """Unsplit setup: no repo, no remote, but two local sessions still collide."""
+    """No repo, no remote, but two local sessions still collide."""
     monkeypatch.setattr(cfg, "STATE_ROOT", tmp_path)
-    monkeypatch.setattr(cfg, "state_is_split", lambda: False)
     as_device(monkeypatch, "laptop")
     state.claim("daily 05-08", tmp_path)
     with pytest.raises(state.StateError, match="already holds"):
         state.claim("daily 05-08", tmp_path)
     assert state.release(tmp_path)
     assert state.read_lease(tmp_path) is None
+
+
+# --- one /daily per day: the ritual that already finished ---------------------------
+
+
+def write_today_md(root, ddmm, body="\n## Today — 5 mi easy\n"):
+    out = root / "out"
+    out.mkdir(exist_ok=True)
+    (out / "today.md").write_text(f"# {ddmm} · Week 3/14 · w/c 10-08 · 11 weeks to NYC\n{body}")
+    return out / "today.md"
+
+
+@pytest.fixture
+def today(monkeypatch):
+    """Freeze 'today' so the fixture's today.md and the guard agree."""
+    frozen = date(2026, 8, 14)
+    # One seam for the whole codebase now: every module asks clock.today()
+    # rather than its own imported `date`, so freezing it here is enough.
+    monkeypatch.setattr(clock, "today", lambda: frozen)
+    return frozen
+
+
+def test_second_daily_is_refused_once_today_md_exists(split, as_laptop, today):
+    write_today_md(split["laptop"], "14-08")
+    with pytest.raises(state.StateError, match="already run today"):
+        state.claim("daily 14-08", split["laptop"])
+
+
+def test_the_refusal_points_at_preview_and_sync(split, as_laptop, today):
+    """A stop that doesn't say what to do instead just gets worked around."""
+    write_today_md(split["laptop"], "14-08")
+    with pytest.raises(state.StateError) as excinfo:
+        state.claim("daily 14-08", split["laptop"])
+    message = str(excinfo.value)
+    assert "mc sync" in message and "/preview" in message and "--again" in message
+
+
+def test_yesterdays_today_md_does_not_block(split, as_laptop, today):
+    """The header names the day, so a file left over from yesterday is not
+    evidence that today has run."""
+    write_today_md(split["laptop"], "13-08")
+    lease, _ = state.claim("daily 14-08", split["laptop"])
+    assert lease.purpose == "daily 14-08"
+
+
+def test_only_the_daily_purpose_is_gated(split, as_laptop, today):
+    """/preview and /week write different files and legitimately run after
+    /daily on the same day."""
+    write_today_md(split["laptop"], "14-08")
+    lease, _ = state.claim("preview 14-08", split["laptop"])
+    assert lease.purpose == "preview 14-08"
+    state.release(split["laptop"])
+    lease, _ = state.claim("week review w/c 10-08", split["laptop"])
+    assert lease.purpose == "week review w/c 10-08"
+
+
+def test_again_overrides_the_refusal(split, as_laptop, today):
+    write_today_md(split["laptop"], "14-08")
+    lease, _ = state.claim("daily 14-08", split["laptop"], again=True)
+    assert lease.device == "laptop"
+
+
+def test_force_does_not_smuggle_a_second_daily_through(split, as_laptop, today):
+    """--force is about a dead lease, not about rewriting a finished day."""
+    write_today_md(split["laptop"], "14-08")
+    with pytest.raises(state.StateError, match="already run today"):
+        state.claim("daily 14-08", split["laptop"], force=True)
+
+
+def test_the_other_device_is_blocked_after_pulling(split, monkeypatch, today):
+    """Cross-device coverage rides on the behind-check: the phone cannot see
+    the laptop's today.md until it pulls, and cannot write until it does."""
+    as_device(monkeypatch, "laptop")
+    write_today_md(split["laptop"], "14-08")
+    state.save("daily 14-08", split["laptop"])
+
+    as_device(monkeypatch, "phone")
+    with pytest.raises(state.StateError, match="behind its remote"):
+        state.claim("daily 14-08", split["phone"])
+
+    git(split["phone"], "pull", "-q")
+    with pytest.raises(state.StateError, match="already run today"):
+        state.claim("daily 14-08", split["phone"])
+
+
+def test_the_refusal_names_the_device_that_wrote_the_day(split, monkeypatch, today):
+    as_device(monkeypatch, "laptop")
+    write_today_md(split["laptop"], "14-08")
+    state.save("daily 14-08", split["laptop"])
+    git(split["phone"], "pull", "-q")
+
+    as_device(monkeypatch, "phone")
+    with pytest.raises(state.StateError, match="on laptop"):
+        state.claim("daily 14-08", split["phone"])
+
+
+def test_daily_run_for_reports_nothing_when_out_is_empty(split, today):
+    assert state.daily_run_for(root=split["laptop"]) is None
+
+
+def test_daily_run_for_ignores_a_file_with_no_header_date(split, today):
+    (split["laptop"] / "out").mkdir(exist_ok=True)
+    (split["laptop"] / "out" / "today.md").write_text("no header at all\n")
+    assert state.daily_run_for(root=split["laptop"]) is None

@@ -8,6 +8,13 @@ gain/loss and Garmin's own grade-adjusted speed have been sitting unused in
 **zero additional API calls**, which is the entire reason this module exists
 rather than a new pull in `garmin.py`.
 
+Since 12-08-2026 the activities themselves arrive via `sources.activities()`,
+which serves the same Garmin-shaped records from either cache — so everything
+below still reads `activity.get("averageHR")` and neither knows nor cares
+which API filled it. The zero-API-call claim above remains true of the Garmin
+path; the intervals path pays one call per long run for its per-sample
+streams, once, and then caches them. See `sources.py`.
+
 What's here and why:
 
 - **Cadence** (`averageRunningCadenceInStepsPerMinute`). The one metric with a
@@ -55,6 +62,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from mc import config as cfg
+from mc import sources
 from mc import sync
 from mc.weather import HourlyWeather, weather_at
 
@@ -218,12 +226,12 @@ def build_run_metrics(activity: dict[str, Any]) -> RunMetrics | None:
 
 
 def run_metrics(
-    garmin_activities: list[dict[str, Any]], as_of: date, days: int = FORM_WINDOW_DAYS
+    activities: list[dict[str, Any]], as_of: date, days: int = FORM_WINDOW_DAYS
 ) -> list[RunMetrics]:
     """Running activities in the trailing `days` window, newest first."""
     cutoff = as_of - timedelta(days=days)
     rows: list[RunMetrics] = []
-    for a in garmin_activities:
+    for a in activities:
         bucket = sync.canonical_bucket(
             (a.get("activityType") or {}).get("typeKey"), sync.GARMIN_BUCKET_KEYWORDS
         )
@@ -238,7 +246,7 @@ def run_metrics(
 
 
 def cadence_baseline(
-    garmin_activities: list[dict[str, Any]],
+    activities: list[dict[str, Any]],
     as_of: date,
     days: int = BASELINE_WINDOW_DAYS,
 ) -> CadenceBaseline:
@@ -249,7 +257,7 @@ def cadence_baseline(
     """
     values = [
         r.cadence_spm
-        for r in run_metrics(garmin_activities, as_of, days=days)
+        for r in run_metrics(activities, as_of, days=days)
         if r.cadence_spm is not None
     ]
     return CadenceBaseline(
@@ -260,7 +268,7 @@ def cadence_baseline(
 
 
 def pace_baseline(
-    garmin_activities: list[dict[str, Any]],
+    activities: list[dict[str, Any]],
     as_of: date,
     days: int = BASELINE_WINDOW_DAYS,
 ) -> float | None:
@@ -275,7 +283,7 @@ def pace_baseline(
     """
     values = [
         r.gap_min_per_mi or r.pace_min_per_mi
-        for r in run_metrics(garmin_activities, as_of, days=days)
+        for r in run_metrics(activities, as_of, days=days)
         if (r.gap_min_per_mi or r.pace_min_per_mi) is not None
     ]
     return statistics.median(values) if len(values) >= MIN_BASELINE_RUNS else None
@@ -405,17 +413,20 @@ class RunSplits:
 
 
 def _details_path(activity_id: str):
-    return cfg.RAW_GARMIN_DIR / "activities" / "details" / f"{activity_id}.json"
+    """Kept as the Garmin-specific path helper it always was; `sources` owns
+    the question of which cache actually answers for an activity."""
+    return sources.garmin_streams_path(activity_id)
 
 
 def run_splits(activity_id: str | None) -> RunSplits | None:
-    """Per-sample form metrics from the already-cached activity detail payload.
+    """Per-sample form metrics from whichever stream cache holds this activity.
 
-    `get_activity_details` has been called and written to disk for every
-    activity since this system's first sync — this reads that file. **Zero API
-    calls.** `directStrideLength` and `directGradeAdjustedSpeed` ship in the
-    same payload as cadence, so widening this from cadence alone added no
-    request to any rate budget.
+    Reads from disk only, never the network — `sources.streams` resolves
+    Garmin's detail payload or intervals' stream file, already normalized to
+    one shape and one set of units. On the Garmin side that payload was
+    fetched anyway, so this stays **zero API calls**; `directStrideLength` and
+    `directGradeAdjustedSpeed` ship alongside cadence, which is why widening
+    this beyond cadence added no request to any rate budget.
 
     Splitting by distance rather than elapsed time keeps a long red light from
     counting as a third of the run. Medians, not means, so a few walk or
@@ -431,48 +442,33 @@ def run_splits(activity_id: str | None) -> RunSplits | None:
     saying nothing, which is the right direction for numbers that exist to
     raise a question.
     """
-    if not activity_id:
-        return None
-    path = _details_path(activity_id)
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text())["data"]
-        descriptors = {m["key"]: m["metricsIndex"] for m in payload["metricDescriptors"]}
-        rows = payload["activityDetailMetrics"]
-    except (KeyError, TypeError, ValueError):
-        return None
+    return splits_from_streams(sources.streams(activity_id))
 
-    cadence_idx = descriptors.get("directDoubleCadence")
-    distance_idx = descriptors.get("sumDistance")
-    if cadence_idx is None or distance_idx is None:
-        return None
-    stride_idx = descriptors.get("directStrideLength")
-    gap_idx = descriptors.get("directGradeAdjustedSpeed")
-    speed_idx = descriptors.get("directSpeed")
 
-    def value_at(values: list[Any], index: int | None) -> float | None:
-        if index is None or len(values) <= index:
-            return None
-        raw = values[index]
-        return None if raw is None else float(raw)
+def splits_from_streams(stream: sources.Streams | None) -> RunSplits | None:
+    """The thirds themselves, over already-normalized per-sample data.
+
+    Split out from `run_splits` so the arithmetic is exercised directly by
+    tests and is identical whichever source filled the streams — the units
+    were reconciled at the boundary in `sources`, deliberately not here.
+    """
+    if stream is None:
+        return None
 
     # (distance, cadence, stride_m, gap_speed_ms, speed_ms)
     samples: list[tuple[float, float, float | None, float | None, float | None]] = []
-    for row in rows:
-        values = row.get("metrics") or []
-        cadence = value_at(values, cadence_idx)
-        distance = value_at(values, distance_idx)
+    for i in range(len(stream)):
+        cadence = stream.cadence[i]
+        distance = stream.distance[i]
         if cadence is None or distance is None or cadence <= 0:
             continue
-        stride_cm = value_at(values, stride_idx)
-        gap_speed = value_at(values, gap_idx)
-        speed = value_at(values, speed_idx)
+        gap_speed = stream.gap_speed[i]
+        speed = stream.speed[i]
         samples.append(
             (
                 distance,
                 cadence,
-                stride_cm / 100.0 if stride_cm and stride_cm > 0 else None,
+                stream.stride[i],
                 gap_speed if gap_speed and gap_speed > _MIN_MOVING_SPEED_MS else None,
                 speed if speed and speed > _MIN_MOVING_SPEED_MS else None,
             )
@@ -738,9 +734,11 @@ def form_summary_lines(
         )
 
     lines.append(
-        "- GAP is Garmin's grade-adjusted pace; *Terrain* is what the route "
-        "cost against flat; *Dew pt* is the air that run actually happened in. "
-        "Descriptive only — no §6 rule reads these (D6), and heat is a "
-        "question to confirm, never a conclusion or an excuse (E3)."
+        "- GAP is the source's own grade-adjusted pace — Garmin's model, or "
+        "intervals.icu's (Strava's) when the run came from there; the two "
+        "agree to within ~2%. *Terrain* is what the route cost against flat; "
+        "*Dew pt* is the air that run actually happened in. Descriptive only "
+        "— no §6 rule reads these (D6), and heat is a question to confirm, "
+        "never a conclusion or an excuse (E3)."
     )
     return lines

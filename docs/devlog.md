@@ -10,6 +10,82 @@ changed; this says what we learned.
 
 ---
 
+## 12-08-2026 — intervals.icu becomes a complete source, not a footnote
+
+`ad27009`, `510b9fb`, `fd7d77a`, `3a168c8`
+
+The goal was running `/daily` from a phone with the Mac off — which meant
+getting Garmin credentials into a cloud session, which meant an age-encrypted
+blob in the repo, a passphrase in an env var, and a token that **rotates**
+behind an ephemeral session's back. A lot of machinery to put an account
+password somewhere the docs say not to.
+
+None of it was necessary. `mc sync` already pulled intervals.icu every run and
+already cross-checked it against Garmin; `mc sync --source intervals` already
+existed. It was being used for one CTL/ATL/TSB line. Probing the live API
+showed it carries per-second streams (cadence, step length, distance,
+velocity, altitude, GPS), GAP at activity and lap level, and the HRV / sleep /
+resting-HR that C2 spends. The credential is a scoped, independently revocable
+API key that cannot reach back into Garmin — categorically safer than the
+password, not merely more convenient. The whole age/rotation apparatus was
+deleted before it was written.
+
+**The dangerous part was units, not architecture.** intervals reports cadence
+per leg and step length in millimetres. Getting either wrong produces a
+*plausible* number, and the decay thresholds (4 spm, 5%) are calibrated on
+Garmin's units, so a silent factor of two turns every run into a finding or
+none into one — with the digest looking entirely normal either way. Both were
+pinned against 28 runs present in both caches. `TODO.md` had already recorded
+the ×2 on 04-08 as a backfill trap; the ÷10 was new. `tests/test_sources.py`
+asserts the two parsers emit *identical* streams, and both failure modes were
+verified to break it.
+
+**Three things that turned out to be wrong along the way:**
+
+*The `state.py` gate had four sites, not two, and the worst was the one nobody
+was looking at.* Every piece of git work was gated on `state_is_split()` — a
+proxy for "is `MC_STATE_DIR` set" — including the **behind-check** in
+`check()`. Merge code and state into one repo and `mc state --save` releases
+the lease, commits nothing, returns `None`, while `--check` skips the guard
+against overwriting another machine's writes. Silently, in the exact
+configuration the phone plan was heading toward. The gate is now "is
+`STATE_ROOT` a git repo", because whole-file-rewrite state files are a
+property of those files, not of where they sit. The old tests patched
+`state_is_split` but ran against a non-git `tmp_path`, so they had been
+passing regardless of the gate.
+
+*GAP looked lost and wasn't.* `types=gap` is a 422 — no per-sample stream. But
+laps carry `gap` next to `start_index`/`end_index`, which index into the
+stream arrays directly, so a sample takes its lap's figure and the existing
+thirds machinery needs no change. The subtlety: parsing drops zero-cadence
+samples, so looking laps up on the *output* position slides every GAP one
+sample later — plausible numbers, wrong stretch of run. There is a test for
+exactly that.
+
+*Preferring Garmin "when present" was not the same as preferring it when
+useful.* On 11-08 Garmin wrote a populated `dailySleepDTO` whose
+`sleepTimeSeconds` was **null** — a record that looks like data and carries
+none. The digest said "unparsed — response shape may have changed" (blaming a
+schema change for an ordinary untracked night) while intervals had 8h 2m for
+that date. Sleep <6h is a C2 signal, so this was a decision quietly lost.
+Selection now tests the value, and is *freshest usable* rather than a fixed
+source order: both caches walk back a week, so a fixed preference answers a
+question about last night with a reading from four days ago.
+
+**Verified end to end** against a state dir holding only intervals data:
+`mc digest` renders the full form table (cadence 169/174/166/168/165 spm on
+Garmin's scale, GAP, terrain, a 167 spm baseline matching the real Garmin
+figure), decay thirds compute from 6,989 samples, and `mc check` reaches its
+normal degraded tier. 463 → 508 tests.
+
+**What is deliberately still Garmin-only**: Body Battery, training status,
+VO2max, race predictions, lactate threshold — no §6 rule reads any of them —
+and `mc push`, which needs Garmin workout IDs. intervals' own `readiness`
+field is a different quantity and is not mapped onto Garmin's label. Absent
+beats wrong.
+
+---
+
 ## 05-08-2026 — Fuelling, and the muscle group nobody was training
 
 Second half of the NYC-marathon post-mortem. Where the stride-length work below
