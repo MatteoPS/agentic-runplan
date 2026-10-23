@@ -1,5 +1,7 @@
 # agentic-runplan
 
+[![codecov](https://codecov.io/gh/MatteoPS/agentic-runplan/graph/badge.svg)](https://codecov.io/gh/MatteoPS/agentic-runplan)
+
 A local system that daily adjusts a fixed training plan with a rule-based
 agent-driven tool. Built to get me to the [TCS NYC Marathon](https://www.nyrr.org/tcsnycmarathon) on November 1st 2026.
 
