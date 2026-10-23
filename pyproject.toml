@@ -21,6 +21,7 @@ mc = "mc.cli:app"
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-cov>=7.1.0",
 ]
 
 [build-system]
@@ -29,3 +30,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mc"]
+
+[tool.coverage.run]
+source = ["mc"]
