@@ -3,6 +3,7 @@
 [![CI](https://github.com/MatteoPS/agentic-runplan/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MatteoPS/agentic-runplan/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/MatteoPS/agentic-runplan/graph/badge.svg)](https://codecov.io/gh/MatteoPS/agentic-runplan)
 [![Last commit](https://img.shields.io/github/last-commit/MatteoPS/agentic-runplan)](https://github.com/MatteoPS/agentic-runplan/commits/main)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-D97757)](https://claude.com/product/claude-code)

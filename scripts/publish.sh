@@ -47,6 +47,7 @@ ALLOW_DIRS=(
   .claude/commands
 )
 ALLOW_FILES=(
+  LICENSE
   CLAUDE.md
   README.md
   TODO.md
